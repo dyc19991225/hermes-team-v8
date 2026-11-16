@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "projects": [
+    {
+      "id": "project-alpha",
+      "name": "Example Web Project",
+      "root": "D:/example-workspace/project-alpha",
+      "status": "active",
+      "agents": ["codex", "claude", "agy"]
+    },
+    {
+      "id": "project-beta",
+      "name": "Example Creative Project",
+      "root": "D:/example-workspace/project-beta",
+      "status": "planned",
+      "agents": ["codex", "agy"]
+    }
+  ]
+}

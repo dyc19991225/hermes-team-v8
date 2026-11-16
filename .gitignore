@@ -1,0 +1,15 @@
+# Keep machine-specific runtime and credentials out of the showcase.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.sqlite3
+*.sqlite3-*
+*.db
+*.log
+__pycache__/
+secrets/
+backups/
+worker-runtime/
+private/

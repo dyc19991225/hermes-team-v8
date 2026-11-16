@@ -1,0 +1,12 @@
+{
+  "project_id": "project-alpha",
+  "project_root": "D:/example-workspace/project-alpha",
+  "session_id": "example-web-session",
+  "agent": "codex",
+  "task_type": "code_fix",
+  "risk_level": "medium",
+  "execution_mode": "workspace_write",
+  "idempotency_key": "example-validation-fix-001",
+  "timeout": 180,
+  "prompt": "在当前项目内修复已有输入校验问题，复用现有结构，执行相关回归，交付修改范围、验证结果与未完成项。"
+}

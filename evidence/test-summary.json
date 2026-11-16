@@ -1,0 +1,37 @@
+{
+  "checked_on": "2026-11-17",
+  "timezone": "Asia/Shanghai",
+  "subject": "Existing local Hermes Team V8 implementation",
+  "repository_scope": "Documentation and illustrative configuration; runtime source and tests are not distributed here",
+  "environment": {
+    "platform": "Windows",
+    "python": "3.13.15"
+  },
+  "command": "python -B -m unittest discover -s tests -v",
+  "result": {
+    "status": "passed",
+    "tests_run": 76,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "duration_seconds": 24.767,
+    "exit_code": 0
+  },
+  "tests_by_module": {
+    "test_codex_adapter.py": 4,
+    "test_dry_run.py": 8,
+    "test_projects_v8.py": 14,
+    "test_prompt_safety.py": 5,
+    "test_stability.py": 27,
+    "test_status_summary.py": 7,
+    "test_team_policy.py": 11
+  },
+  "real_model_calls_in_this_regression": 0,
+  "online_worker_validation": "Not rerun on 2026-11-17; historical acceptance and known failure are described in docs/validation.md",
+  "output_file": "local-regression-2026-11-17.txt",
+  "limitations": [
+    "A local regression pass does not establish current online service or CLI compatibility",
+    "No measured cost, quality or throughput improvement is claimed",
+    "The published transcript is a local test record, not an independent third-party audit"
+  ]
+}
