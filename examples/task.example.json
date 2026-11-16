@@ -8,5 +8,11 @@
   "execution_mode": "workspace_write",
   "idempotency_key": "example-validation-fix-001",
   "timeout": 180,
+  "budget": {
+    "max_output_bytes": 16777216,
+    "max_tokens": 20000,
+    "max_retries": 0
+  },
+  "depends_on": [],
   "prompt": "在当前项目内修复已有输入校验问题，复用现有结构，执行相关回归，交付修改范围、验证结果与未完成项。"
 }

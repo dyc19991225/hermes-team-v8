@@ -1,0 +1,107 @@
+{
+  "checked_on": "2026-11-17",
+  "timezone": "Asia/Shanghai",
+  "subject": "Installed local Hermes Team V8.1.0 implementation",
+  "repository_scope": "Documentation, sanitized examples and verification records; runtime source and tests are not distributed here",
+  "environment": {
+    "platform": "Windows",
+    "python": "3.13.15"
+  },
+  "command": "python -B -m unittest discover -s tests -v",
+  "result": {
+    "status": "passed",
+    "tests_run": 101,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "duration_seconds": 43.835,
+    "exit_code": 0
+  },
+  "staging_result": {
+    "status": "passed",
+    "tests_run": 101,
+    "duration_seconds": 44.305,
+    "exit_code": 0
+  },
+  "tests_by_module": {
+    "test_codex_adapter.py": 4,
+    "test_dry_run.py": 8,
+    "test_projects_v8.py": 14,
+    "test_prompt_safety.py": 5,
+    "test_stability.py": 27,
+    "test_status_summary.py": 7,
+    "test_team_policy.py": 11,
+    "test_upgrade_v81.py": 25
+  },
+  "real_model_calls_in_this_regression": 0,
+  "separate_online_validation": {
+    "codex": {
+      "status": "SUCCEEDED",
+      "exit_code": 0,
+      "duration_seconds": 29.472,
+      "fixture_content_preserved": true
+    },
+    "agy": {
+      "status": "SUCCEEDED",
+      "exit_code": 0,
+      "duration_seconds": 14.236,
+      "fixture_content_preserved": true
+    }
+  },
+  "native_profile_probe": {
+    "agent": "codex",
+    "status": "passed",
+    "model_turns": 0
+  },
+  "cli_versions": {
+    "codex": "codex-cli 0.169.0",
+    "claude": "2.1.322 (Claude Code)",
+    "agy": "1.5.5"
+  },
+  "claude_online_model_rerun": false,
+  "formal_hook_checks": {
+    "real_session_injected": true,
+    "same_project_read_allowed": true,
+    "other_project_read_blocked": true,
+    "forged_session_blocked": true,
+    "unknown_flags_blocked": true,
+    "internal_worker_blocked": true,
+    "direct_business_write_blocked": true,
+    "doctor_runtime_session_injected": true,
+    "doctor_formal_command_succeeded": true
+  },
+  "hook_doctor": "passed",
+  "config_check": {
+    "exit_code": 0,
+    "config_version": 52
+  },
+  "migration": {
+    "integrity_check": "ok",
+    "existing_rows_content_preserved": true,
+    "tasks": 135,
+    "task_events": 14773,
+    "session_bindings": 4,
+    "locks_before": 0,
+    "locks_after": 0,
+    "historical_tasks_auto_enqueued": false
+  },
+  "original_hook_unchanged": true,
+  "original_agent_config_unchanged": true,
+  "execution_policy": "serial_all_workers",
+  "automatic_retries": false,
+  "initial_agy_diagnostics": {
+    "failed_attempts_before_protocol_fix": 2,
+    "final_stream_json_smoke": "SUCCEEDED"
+  },
+  "output_file": "v8.1-local-regression-2026-11-17.txt",
+  "output_sha256": "3330a643f82917f0ffd2e8e4368c5973acf540580f271e908c2960bd1db5b26e",
+  "limitations": [
+    "Online smoke calls use disposable read-only projects and do not establish all file-boundary scenarios",
+    "No real Claude model task was rerun during this upgrade",
+    "Reported token thresholds cannot guarantee a billing cap; unavailable usage is not zero usage",
+    "Acceptance checks validate evidence completeness, not test truth or product quality",
+    "Long-running queues, cross-platform operation and measured cost improvements remain unverified",
+    "Published records originate from local author validation, not an independent third-party audit"
+  ],
+  "output_normalization": "UTF-8 with LF line endings; test output content preserved"
+}

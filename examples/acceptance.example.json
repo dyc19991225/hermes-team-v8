@@ -1,0 +1,10 @@
+{
+  "summary": "示例：主控独立核对本次修改范围及相关回归，实际使用时替换为真实证据。",
+  "checks": [
+    {
+      "name": "当前修改相关的回归测试",
+      "status": "passed"
+    }
+  ],
+  "outputs": ["D:/example-workspace/project-alpha/src/validation.py"]
+}
