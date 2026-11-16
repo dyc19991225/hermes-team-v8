@@ -8,7 +8,13 @@ V8 的重点是让多个项目共用工具和登录状态，同时明确每次�
 
 > 这里公开 V8.1 核心运行源码、Hermes Hook、管理 Skill、配置模板和回归测试。V8.1 是本地编排方案的版本名，并非上游 Hermes 的官方版本号。Windows / Python 3.13 是实际验收环境；真实模型任务需要自行安装并登录 CLI。更新日期：2026-11-17。
 
-[运行与配置](docs/runtime-setup.md) · [核心源码](dispatch/) · [回归测试](dispatch/tests/) · [V8.1 升级说明](docs/upgrade-v8.1.md) · [架构与执行流程](docs/architecture.md) · [验证记录](docs/validation.md)
+[Windows 一键配置](docs/windows-setup.md) · [运行与配置](docs/runtime-setup.md) · [核心源码](dispatch/) · [回归测试](dispatch/tests/) · [架构与执行流程](docs/architecture.md) · [验证记录](docs/validation.md)
+
+## Windows 一键安装配置
+
+解压后双击 **`install.cmd`**。向导检测 Python、Hermes 和执行器 CLI，引导选择项目，预览并备份后合并 Hook、生成 Skill，再运行本地自检。Python 缺失时可确认后用 winget 安装；CLI 未安装时提供官方说明和路径重试。
+
+完成后双击 **`start-hermes.cmd`** 启动。账号登录、主控模型和首次 Hook 信任由用户在官方界面确认；向导保留已有配置和其他 Hook，不代写授权记录。详见 [向导说明](docs/windows-setup.md)。
 
 ## 运行公开测试
 
@@ -132,7 +138,7 @@ flowchart TD
 
 ## 当前限制与后续方向
 
-- 目前是面向 Windows 本地环境的编排实践，核心源码和测试已提供；尚无通用安装器或跨平台验收，Hermes 本体和模型 CLI 需另行安装。
+- 提供 Windows 安装配置向导；跨平台尚未验收，Hermes 本体和模型 CLI 仍需另行安装和登录。
 - V8.1 修复了已复现的标准流编码和异常 Unicode 结果持久化问题；历史 JSON-RPC 编码失败的完整根因仍未确认，不把它与这些复现问题视为同一个根因。
 - 命名权限协议、执行器版本、Hook 和本机配置共同影响边界行为；CLI 升级需要重新验收。
 - 当前隔离针对项目与控制面的既定边界，不能据有限测试推导出完整主机隔离或网络数据防泄漏能力。

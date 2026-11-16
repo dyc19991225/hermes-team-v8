@@ -2,6 +2,8 @@
 
 本仓库提供 V8.1 的六个核心模块、Hermes Hook、管理 Skill 模板、八个原有测试模块及新增的配置入口回归。Windows、Python 3.13 是本次实际验收环境；这里不包含 Hermes 本体、模型 CLI、账号登录、业务项目或已有账本。
 
+**首次使用推荐双击根目录 `install.cmd`**，按 [Windows 向导说明](windows-setup.md) 完成环境检测、项目、Hook 和 Skill 配置。以下保留手动配置入口；向导安装依赖只在 `.setup-venv` 中，运行时及离线运行测试仍只用标准库。
+
 ## 文件结构
 
 ```text
@@ -18,6 +20,9 @@ config/                 无账号信息的 agents / routing 模板
 skills/                 管理 Skill 模板
 scripts/configure.py    生成本机忽略配置，拒绝覆盖已有文件
 scripts/run_tests.py    临时目录、虚构项目和模拟 CLI 的离线测试
+scripts/windows_setup.py  Windows 检测、预览、合并、备份、自检和回退
+install.cmd              一键进入配置向导
+start-hermes.cmd         使用已保存的本机设置启动
 ```
 
 这些模块以本地已验收的 V8.1 为基础，去除了固定用户名、业务目录和本机安装位置。Hook 默认控制同目录的 Dispatcher，缺少项目注册配置时拒绝请求。代码中的进程 token、模型 Token 用量字段和测试假值不是登录密钥。

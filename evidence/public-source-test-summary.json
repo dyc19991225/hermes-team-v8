@@ -13,7 +13,7 @@
     "failures": 0,
     "errors": 0,
     "skipped": 0,
-    "duration_seconds": 45.378,
+    "duration_seconds": 46.355,
     "exit_code": 0
   },
   "tests_by_module": {
@@ -64,7 +64,7 @@
     "dispatch/tests/test_team_policy.py": "8a35a1ff086fca2c91314239113ee15ad9dc4bfe0d5a2c97244798286a90e27d",
     "dispatch/tests/test_upgrade_v81.py": "47e2b010bb4f2d66f8b2713b2de331013d30e9d42b2dba520a0933191d252d25",
     "dispatch/workflow.py": "ffb75b81be66a67017b54a2cc7f76ac590304a60261035652bdb5c12fface2f0",
-    "scripts/configure.py": "c03376befed3d2dba81bbd65b2fd65480d822dc82733514717f3cbeb71425eee",
+    "scripts/configure.py": "2eab62c827fa393bb6c34b14baa536609f0fc81025a256030d0dab0b358985a6",
     "scripts/run_tests.py": "797ef9181b2b21fcb05511f861dc9af6a4e0d855dc51b589fca719c4c85dd503",
     "skills/team-project-manager/SKILL.md": "398b8bae95db9f66614c75c871704ce255de9073dd46b0a3826275c2a03c0ecb"
   },
@@ -74,11 +74,12 @@
     "This result is local author validation, not an independent third-party audit"
   ],
   "clean_staged_export_result": {
-    "method": "git checkout-index export, followed by scripts/run_tests.py",
     "status": "passed",
     "tests_run": 105,
-    "duration_seconds": 45.661,
+    "duration_seconds": 46.317,
     "exit_code": 0,
+    "method": "git checkout-index export, followed by scripts/run_tests.py",
     "untracked_local_configuration_used": false
-  }
+  },
+  "windows_setup_summary": "windows-setup-test-summary.json"
 }

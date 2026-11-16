@@ -7,10 +7,11 @@ import re
 REPO = Path(__file__).resolve().parents[1]
 
 
-def configuration(registry_path, projects, executables):
+def configuration(registry_path, projects, executables, *, template_root=None):
     """Also used by the offline test runner with temporary Python executables."""
-    agents = json.loads((REPO/'config'/'agents.example.json').read_text(encoding='utf-8'))
-    routing = json.loads((REPO/'config'/'routing.example.json').read_text(encoding='utf-8'))
+    templates = Path(template_root or REPO)/'config'
+    agents = json.loads((templates/'agents.example.json').read_text(encoding='utf-8'))
+    routing = json.loads((templates/'routing.example.json').read_text(encoding='utf-8'))
     for agent, entry in agents['agents'].items():
         entry['enabled'] = agent in executables
         if entry['enabled']:

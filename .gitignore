@@ -27,3 +27,5 @@ private/
 /dispatch/.v71-maintenance
 /dispatch/*.worker.log
 /test-output/
+/.setup-venv/
+*.team-setup-*.tmp

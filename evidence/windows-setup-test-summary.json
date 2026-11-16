@@ -1,0 +1,100 @@
+{
+  "checked_on": "2026-11-17",
+  "subject": "Windows installation and configuration wizard",
+  "runtime_regression": {
+    "status": "passed",
+    "tests_run": 105,
+    "duration_seconds": 46.355,
+    "exit_code": 0
+  },
+  "wizard_regression": {
+    "status": "passed",
+    "tests_run": 24,
+    "duration_seconds": 4.131,
+    "exit_code": 0
+  },
+  "total_tests": 129,
+  "model_calls": 0,
+  "wizard_command": ".setup-venv/Scripts/python.exe -X utf8 -B -m unittest discover -s tests/setup -v",
+  "validation": [
+    "Temporary Hermes YAML merge preserves comments, channels and unrelated Hooks",
+    "Explicit old Team Hook migration; no Hook trust records are written",
+    "Backup restoration, interruption rollback, concurrent file changes and existing maintenance gate protection",
+    "Repeated installation is idempotent; active tasks and locks block updates",
+    "Real local Dispatcher initialization, temporary binding cleanup, Hook session injection and control-plane read denial",
+    "Unicode and space-containing paths; PowerShell read-only bootstrap",
+    "CLI probe timeout uses owned process tree cleanup"
+  ],
+  "local_read_only_detection": {
+    "hermes": {
+      "probe": "help",
+      "version": "Hermes CLI（帮助检查通过）",
+      "login_checked": false
+    },
+    "codex": {
+      "probe": "version",
+      "version": "codex-cli 0.169.0",
+      "login_checked": false
+    },
+    "claude": {
+      "probe": "version",
+      "version": "2.1.322 (Claude Code)",
+      "login_checked": false
+    },
+    "agy": {
+      "probe": "version",
+      "version": "1.5.5",
+      "login_checked": false
+    }
+  },
+  "powershell_bootstrap_cancel": {
+    "status": "passed",
+    "exit_code": 130,
+    "real_hermes_configuration_applied": false,
+    "trust_records_written": false
+  },
+  "setup_dependency": {
+    "package": "ruamel.yaml",
+    "version": "0.19.1",
+    "hash_enforced": true,
+    "scope": "repository .setup-venv only"
+  },
+  "source_sha256": {
+    "install.cmd": "8bd4e680d22588bb99c9bfb8b28d67a1118315d51bb8730de29d2962dbd33d9d",
+    "start-hermes.cmd": "c1a1378c1f5641d7b44cec88d99950fc9dade0cc0b4ed600ece304c0291fe75a",
+    "requirements-setup.txt": "e4cae16434e8712861c10a35a1af1575de2980fe98a16b6385ddf4fd776d297c",
+    "scripts/install-windows.ps1": "2d9e868f3f2c6de5fea1e40c89a195b438b25b395139e2b04781b1f3454b1e59",
+    "scripts/windows_setup.py": "bceb079bff895842aaec6c3497451d649ed537514795f9703622ec18fe0d7dcb",
+    "scripts/configure.py": "2eab62c827fa393bb6c34b14baa536609f0fc81025a256030d0dab0b358985a6",
+    "tests/setup/test_windows_setup.py": "c7c12dc9d222cec5e2dc4552ebfc8f8de2a2a035cf998f331819ae2afdecb811"
+  },
+  "limitations": [
+    "Python installation via winget was not executed on a clean Windows machine",
+    "Native account login and first-use Hook approval still require the user",
+    "Third-party CLI installers are linked, not automatically downloaded",
+    "No real model tasks or billing calls were made",
+    "Windows-only validation; this is local author testing"
+  ],
+  "clean_staged_export": {
+    "method": "git checkout-index into a fresh Unicode and space-containing directory",
+    "runtime": {
+      "status": "passed",
+      "tests_run": 105,
+      "duration_seconds": 46.317,
+      "exit_code": 0
+    },
+    "wizard": {
+      "status": "passed",
+      "tests_run": 24,
+      "duration_seconds": 4.24,
+      "exit_code": 0
+    },
+    "total_tests": 129,
+    "untracked_local_configuration_used": false
+  },
+  "install_cmd_cancel": {
+    "status": "passed",
+    "exit_code": 130,
+    "configuration_written": false
+  }
+}
