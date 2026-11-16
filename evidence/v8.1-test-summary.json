@@ -2,7 +2,7 @@
   "checked_on": "2026-11-17",
   "timezone": "Asia/Shanghai",
   "subject": "Installed local Hermes Team V8.1.0 implementation",
-  "repository_scope": "Documentation, sanitized examples and verification records; runtime source and tests are not distributed here",
+  "repository_scope": "Historical installed-runtime validation; sanitized runtime and tests now available in dispatch; see public-source-test-summary.json for the public source regression",
   "environment": {
     "platform": "Windows",
     "python": "3.13.15"

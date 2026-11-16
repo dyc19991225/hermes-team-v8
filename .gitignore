@@ -1,4 +1,4 @@
-# Keep machine-specific runtime and credentials out of the showcase.
+# Local runtime configuration, credentials and generated task data.
 .env
 .env.*
 !.env.example
@@ -8,8 +8,22 @@
 *.sqlite3-*
 *.db
 *.log
+*.jsonl
+*.sqlite
+*.sqlite-*
+*.pyc
 __pycache__/
 secrets/
 backups/
 worker-runtime/
 private/
+/local-config/
+/dispatch/agents.json
+/dispatch/routing.json
+/dispatch/inbox/
+/dispatch/prompts/
+/dispatch/results/
+/dispatch/reports/
+/dispatch/.v71-maintenance
+/dispatch/*.worker.log
+/test-output/

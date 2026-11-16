@@ -1,0 +1,131 @@
+{
+  "schema_version": "1.0",
+  "cost_policy": "Balanced",
+  "project_whitelist": [
+    "D:/example-workspace/project-alpha"
+  ],
+  "task_types": {
+    "smoke_test": {
+      "default_agent": "codex",
+      "write": false,
+      "allowed_modes": [
+        "read_only",
+        "plan"
+      ],
+      "min_risk_level": "low"
+    },
+    "code_write": {
+      "default_agent": "codex",
+      "write": true,
+      "allowed_modes": [
+        "workspace_write",
+        "default",
+        "accept_edits"
+      ],
+      "min_risk_level": "medium"
+    },
+    "code_fix": {
+      "default_agent": "codex",
+      "write": true,
+      "allowed_modes": [
+        "workspace_write",
+        "default",
+        "accept_edits"
+      ],
+      "min_risk_level": "medium"
+    },
+    "script_write": {
+      "default_agent": "codex",
+      "write": true,
+      "allowed_modes": [
+        "workspace_write",
+        "default",
+        "accept_edits"
+      ],
+      "min_risk_level": "medium"
+    },
+    "test_write": {
+      "default_agent": "codex",
+      "write": true,
+      "allowed_modes": [
+        "workspace_write",
+        "default"
+      ],
+      "min_risk_level": "low"
+    },
+    "ui_build": {
+      "default_agent": "agy",
+      "write": true,
+      "allowed_modes": [
+        "accept_edits",
+        "workspace_write"
+      ],
+      "min_risk_level": "medium"
+    },
+    "browser_verify": {
+      "default_agent": "codex",
+      "write": false,
+      "allowed_modes": [
+        "read_only",
+        "plan"
+      ],
+      "min_risk_level": "low"
+    },
+    "visual_engineering": {
+      "default_agent": "agy",
+      "write": true,
+      "allowed_modes": [
+        "accept_edits",
+        "workspace_write"
+      ],
+      "min_risk_level": "medium"
+    },
+    "architecture_design": {
+      "default_agent": "claude",
+      "write": false,
+      "allowed_modes": [
+        "plan",
+        "read_only"
+      ],
+      "min_risk_level": "medium"
+    },
+    "security_audit": {
+      "default_agent": "claude",
+      "write": false,
+      "allowed_modes": [
+        "plan",
+        "read_only"
+      ],
+      "min_risk_level": "low"
+    },
+    "code_review": {
+      "default_agent": "claude",
+      "write": false,
+      "allowed_modes": [
+        "plan",
+        "read_only"
+      ],
+      "min_risk_level": "low"
+    }
+  },
+  "risk_levels": {
+    "low": {
+      "requires_approval": false
+    },
+    "medium": {
+      "requires_approval": false
+    },
+    "high": {
+      "requires_approval": true
+    }
+  },
+  "approval_states": [
+    "not_required",
+    "approved",
+    "pending",
+    "denied"
+  ],
+  "max_concurrent_writes_per_project": 1,
+  "project_registry": "C:/path/to/hermes-team-v8/local-config/registry.json",
+  "execution_policy": "serial_all_workers"
+}

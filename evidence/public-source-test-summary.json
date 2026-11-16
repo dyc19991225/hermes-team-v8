@@ -1,0 +1,84 @@
+{
+  "checked_on": "2026-11-17",
+  "version": "8.1.0",
+  "subject": "Sanitized public runtime and tests in this repository",
+  "command": "python -X utf8 -B scripts/run_tests.py",
+  "environment": {
+    "platform": "Windows",
+    "python": "3.13.15"
+  },
+  "result": {
+    "status": "passed",
+    "tests_run": 105,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "duration_seconds": 45.378,
+    "exit_code": 0
+  },
+  "tests_by_module": {
+    "test_codex_adapter.py": 4,
+    "test_dry_run.py": 8,
+    "test_portability.py": 4,
+    "test_projects_v8.py": 14,
+    "test_prompt_safety.py": 5,
+    "test_stability.py": 27,
+    "test_status_summary.py": 7,
+    "test_team_policy.py": 11,
+    "test_upgrade_v81.py": 25
+  },
+  "real_model_calls": 0,
+  "installed_agent_clis_required": false,
+  "credentials_required": false,
+  "test_isolation": {
+    "runtime_copy": "temporary directory; source allowlist only",
+    "user_configuration": "temporary user profile, Codex home and dummy config",
+    "executables": "current Python; fake CLI invocations and simulated protocol responses",
+    "provider_credential_environment": "common provider key and token variables removed from test process",
+    "production_runtime_modified": false
+  },
+  "published_components": {
+    "core_runtime_modules": 6,
+    "hook_modules": 1,
+    "original_test_modules": 8,
+    "additional_test_modules": 1,
+    "skill_templates": 1
+  },
+  "source_sha256": {
+    "config/agents.example.json": "3eb99173efdd9941d2ff9ff329587e03ee9e849863fa674bdaf5ecb99eca021c",
+    "config/routing.example.json": "f9fe70b8137dc53fdd6803de6ee48e773bf4012dff72cb28099552003c0e934b",
+    "dispatch/codex_worker.py": "9e9553685090ecf13eb05c99cb87d9cfadff675923fb09a897d154120ca2b03d",
+    "dispatch/dispatcher.py": "e402d2fe90bcf25b4bfafc7eb7547d9c59feccd6ccb6f7cfbfafd1cc4003d527",
+    "dispatch/policy.py": "107616ccf58b5152c682937c462e2f09d77dd9cacb715b73c4d02e1c1a18fd6e",
+    "dispatch/process_runtime.py": "a867232c00a586db22d55ad99fbba79326d9ec363137957a89d0dcdacc131efd",
+    "dispatch/project_manager.py": "1b1c06313ac654b91ac583ef6d361b622347ef9ffff0b8175bd6deffa1a7f377",
+    "dispatch/team-policy.py": "34327883e6c5b31e8883991941e4f5f69e5a0bd598b35e82a4d455192e7e4ee5",
+    "dispatch/tests/_support.py": "a3b869606450cbecf9b99e3e46386d3f34963a037a32331a99196e496eee4adc",
+    "dispatch/tests/test_codex_adapter.py": "5b2d1e980f072a40926bf7e4fc0c553d67de09ae3d455248b4cb414a17362e97",
+    "dispatch/tests/test_dry_run.py": "ea487ce4b24eeab35994dbc365966235b97dd3dcfda817aaa0e05e0b189565ee",
+    "dispatch/tests/test_portability.py": "0972489c6e7ab03a05ea0e9d67929a6da0cef5f3001a1386d7f356cbc6521069",
+    "dispatch/tests/test_projects_v8.py": "03a27cd746a6934a1024d8b2797457796d938dd2c933cd0f972645d9fd134938",
+    "dispatch/tests/test_prompt_safety.py": "d55413c4d99b167dfc36186305377468519dcb401d0f3668caac15dd46436a1b",
+    "dispatch/tests/test_stability.py": "442cb8df5cd711c2e37b5a2d0056368f7d26a82e8e05842865a6c2f4541db946",
+    "dispatch/tests/test_status_summary.py": "d66dbaf99b7fdffc3a59fd3f3369e3b0b5b9d9684e40d39427efdb95cc8c6b73",
+    "dispatch/tests/test_team_policy.py": "8a35a1ff086fca2c91314239113ee15ad9dc4bfe0d5a2c97244798286a90e27d",
+    "dispatch/tests/test_upgrade_v81.py": "47e2b010bb4f2d66f8b2713b2de331013d30e9d42b2dba520a0933191d252d25",
+    "dispatch/workflow.py": "ffb75b81be66a67017b54a2cc7f76ac590304a60261035652bdb5c12fface2f0",
+    "scripts/configure.py": "c03376befed3d2dba81bbd65b2fd65480d822dc82733514717f3cbeb71425eee",
+    "scripts/run_tests.py": "797ef9181b2b21fcb05511f861dc9af6a4e0d855dc51b589fca719c4c85dd503",
+    "skills/team-project-manager/SKILL.md": "398b8bae95db9f66614c75c871704ce255de9073dd46b0a3826275c2a03c0ecb"
+  },
+  "limits": [
+    "Windows offline regression; real CLI compatibility and account access require separate configuration and validation",
+    "No raw task prompts, database, account credentials or original runtime logs are distributed",
+    "This result is local author validation, not an independent third-party audit"
+  ],
+  "clean_staged_export_result": {
+    "method": "git checkout-index export, followed by scripts/run_tests.py",
+    "status": "passed",
+    "tests_run": 105,
+    "duration_seconds": 45.661,
+    "exit_code": 0,
+    "untracked_local_configuration_used": false
+  }
+}

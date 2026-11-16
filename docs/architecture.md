@@ -4,7 +4,7 @@
 
 用一套 Hermes 和一份共享 Dispatcher 管理多个项目，同时让任务归属、执行权限、生命周期和交付证据可以单独核对。
 
-本文描述 2026-11-17 安装并验收的本地 V8.1 实现。模块名对应本地源码，完整实现未随本展示仓库发布。
+本文描述 2026-11-17 安装并验收的 V8.1 实现。公开模块见 [dispatch](../dispatch/)，脱敏后以动态控制目录、虚构项目和独立测试配置替代本机固定位置，配置步骤见 [运行说明](runtime-setup.md)。
 
 ## 模块划分
 
@@ -17,7 +17,7 @@
 | `process_runtime.py` | 进程身份、Windows Job Objects、输出流保存、超时和取消 |
 | `workflow.py` | 加法迁移、明确队列、同项目依赖、独立验收、预算与用量、CLI 诊断 |
 | `team-policy.py` | Hermes Hook 门禁，约束主控工具调用与项目归属 |
-| `projects/` | 项目注册、Profile、独立记忆和新项目模板 |
+| 本机注册配置目录 | 项目注册、Profile 和独立记忆；首次配置生成 `local-config/registry.json`，真实内容不提交 |
 | `team-project-manager` Skill | 指导 Hermes 使用项目入口和共享 Dispatcher |
 
 ## 项目归属与上下文

@@ -1,0 +1,137 @@
+{
+  "schema_version": "1.0",
+  "orchestrator": {
+    "name": "hermes",
+    "mode": "ORCHESTRATE_ONLY",
+    "dispatchable_as_cli_worker": false
+  },
+  "agents": {
+    "codex": {
+      "enabled": false,
+      "role": "default_primary_coder",
+      "description": "Default primary coding agent for code, scripts, automated tests, and fixes.",
+      "executable": "C:/path/to/codex.exe",
+      "capabilities": {
+        "exec_subcommand": true,
+        "json_output": "jsonl",
+        "sandbox_modes": [
+          "read-only",
+          "workspace-write"
+        ],
+        "native_timeout_flag": false,
+        "working_dir_flag": "-C"
+      },
+      "execution_modes": {
+        "read_only": {
+          "sandbox": "read-only"
+        },
+        "workspace_write": {
+          "sandbox": "workspace-write"
+        }
+      },
+      "default_timeout_seconds": 300,
+      "max_timeout_seconds": 900,
+      "forbidden_flags": [
+        "--dangerously-bypass-approvals-and-sandbox",
+        "--yolo",
+        "--dangerously-bypass-hook-trust",
+        "danger-full-access"
+      ]
+    },
+    "claude": {
+      "enabled": false,
+      "role": "advanced_engineering_and_review",
+      "description": "Complex engineering, architecture, security audit, and independent code review.",
+      "executable": "C:/path/to/claude.exe",
+      "capabilities": {
+        "print_flag": "-p",
+        "json_output": "json",
+        "permission_modes_help": [
+          "acceptEdits",
+          "auto",
+          "manual",
+          "dontAsk",
+          "plan"
+        ],
+        "permission_modes_cli": [
+          "acceptEdits",
+          "auto",
+          "bypassPermissions",
+          "manual",
+          "dontAsk",
+          "plan"
+        ],
+        "max_turns_documented": false,
+        "native_timeout_flag": false,
+        "working_dir_flag": null,
+        "permission_prompts": "none"
+      },
+      "execution_modes": {
+        "plan": {
+          "permission_mode": "plan",
+          "tools_restrict": ""
+        },
+        "read_only": {
+          "permission_mode": "plan",
+          "tools_restrict": "Read,Grep,Glob"
+        },
+        "default": {
+          "permission_mode": "manual"
+        },
+        "manual": {
+          "permission_mode": "manual"
+        },
+        "accept_edits": {
+          "permission_mode": "acceptEdits"
+        }
+      },
+      "default_timeout_seconds": 240,
+      "max_timeout_seconds": 600,
+      "forbidden_flags": [
+        "--dangerously-skip-permissions",
+        "--allow-dangerously-skip-permissions",
+        "bypassPermissions"
+      ]
+    },
+    "agy": {
+      "enabled": false,
+      "role": "ide_ui_visualization_browser",
+      "description": "IDE, UI, visualization engineering, browser verification, and integration debugging.",
+      "executable": "C:/path/to/agy.exe",
+      "capabilities": {
+        "print_flag": "-p",
+        "json_output": "json",
+        "sandbox_flag": "--sandbox",
+        "print_timeout_flag": "--print-timeout",
+        "working_dir_flag": null,
+        "mode_choices": [
+          "plan",
+          "accept-edits",
+          "auto"
+        ],
+        "stream_json_supported": true
+      },
+      "execution_modes": {
+        "read_only": {
+          "mode": "plan",
+          "sandbox": true
+        },
+        "plan": {
+          "mode": "plan",
+          "sandbox": true
+        },
+        "accept_edits": {
+          "mode": "accept-edits",
+          "sandbox": true
+        }
+      },
+      "default_model": "gemini-3.8-flash-high",
+      "review_model": "gemini-3.8-flash-low",
+      "default_timeout_seconds": 120,
+      "max_timeout_seconds": 240,
+      "forbidden_flags": [
+        "--dangerously-skip-permissions"
+      ]
+    }
+  }
+}

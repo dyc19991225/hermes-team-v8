@@ -6,7 +6,7 @@
 - `task.example.json`：展示任务归属、执行器、风险、模式、超时、幂等键、提示、预算和前置任务字段。
 - `acceptance.example.json`：展示验收证据结构。示例输出文件没有随仓库提供，不能直接当成已验收结果。
 
-完整本地运行还需要已安装的 Dispatcher、配套 routing / agents 配置、受信任 Hook、CLI 与实际项目目录，本仓库未包含这些运行组件。仅复制这两个 JSON 文件不能运行 V8。
+核心 Dispatcher、Hook 和测试已在 [dispatch](../dispatch/) 提供，配套配置模板见 [config](../config/)；请先阅读 [运行说明](../docs/runtime-setup.md)。实际模型任务仍需本机 CLI、登录、项目目录和 Hook 信任配置。仅复制示例 JSON 不会自动完成运行配置。
 
 在 Hermes 受控入口中，会话 ID 来自运行时 Hook；普通终端直接调用时需要显式会话 ID 和事先绑定。示例中的 `example-web-session` 只是占位值。幂等键用于拒绝重复创建，示例不是批量重试脚本。
 
