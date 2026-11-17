@@ -2,9 +2,11 @@
 
 **一套 Hermes，管理多个项目，协调多个 Agent 执行器。**
 
-**[下载 v8.1.1 源码与 Windows 安装向导（ZIP）](https://github.com/dyc19991225/hermes-team-v8/archive/refs/tags/v8.1.1.zip)**
+**[下载 v8.1.1 Windows 安装包（ZIP）](https://github.com/dyc19991225/hermes-team-v8/releases/download/v8.1.1/hermes-team-v8.1.1-windows.zip)**
 
-v8.1.1 修复高风险审批、派发恢复、取消状态、向导中断恢复和大日志解析。Windows 隔离测试 **141 项通过**。详见 [版本记录](CHANGELOG.md#v811--2026-11-18) · [Windows 安装说明](docs/windows-setup.md)。
+[v8.1.1 Release](https://github.com/dyc19991225/hermes-team-v8/releases/tag/v8.1.1) · [一键安装步骤](#windows-一键安装配置) · [Windows 安装说明](https://github.com/dyc19991225/hermes-team-v8/releases/download/v8.1.1/WINDOWS-INSTALL.md) · [141 项测试验收报告](https://github.com/dyc19991225/hermes-team-v8/releases/download/v8.1.1/ACCEPTANCE-RESULTS.md) · [SHA-256 校验文件](https://github.com/dyc19991225/hermes-team-v8/releases/download/v8.1.1/SHA256SUMS.txt)
+
+v8.1.1 修复高风险审批、派发恢复、取消状态、向导中断恢复和大日志解析。发布包解压复跑后，**112 项运行时测试和 29 项 Windows 安装向导测试全部通过**。详见 [版本记录](CHANGELOG.md#v811--2026-11-18) 和 [结构化验收摘要](https://github.com/dyc19991225/hermes-team-v8/releases/download/v8.1.1/acceptance-summary.json)。
 
 [历史 v8.1.0 Release](https://github.com/dyc19991225/hermes-team-v8/releases/tag/v8.1.0) · [v8.1.0 下载与安装验收结果](https://github.com/dyc19991225/hermes-team-v8/releases/download/v8.1.0/ACCEPTANCE-RESULTS.md) · [v8.1.0 SHA-256 校验文件](https://github.com/dyc19991225/hermes-team-v8/releases/download/v8.1.0/SHA256SUMS.txt)
 
@@ -20,10 +22,10 @@ V8 的重点是让多个项目共用工具和登录状态，同时明确每次�
 
 适用于 Windows。需要可运行的 Hermes、Codex 原生 `.exe`；Claude Code / AGY 可选。Python 要求 3.13+，未检测到时可确认后用 winget 安装；模型 CLI 未安装时，向导提供官方安装说明和路径重试。ZIP 包含源码与配置向导，不内置模型 CLI 或登录账号。
 
-1. **下载并解压**：[获取 v8.1.1 ZIP](https://github.com/dyc19991225/hermes-team-v8/archive/refs/tags/v8.1.1.zip)，完整解压到与业务项目分开的固定目录。
-2. **运行向导**：双击解压目录中的 **`install.cmd`**，检测环境和执行器，选择有效的 Hermes 配置目录，填写业务项目路径与项目 ID。
-3. **预览并应用**：确认文件改动后，向导先备份，再合并 Hook、生成管理 Skill 并执行本地自检；保留已有模型、渠道和其他 Hook。
-4. **启动并完成信任**：双击 **`start-hermes.cmd`**，在官方界面完成主控模型、账号登录及首次 Hook 信任；以后继续用此文件启动，沿用保存的配置。
+1. **下载并解压。** 完整解压 ZIP 到与业务项目分开的固定目录。[下载 v8.1.1 Windows 安装包](https://github.com/dyc19991225/hermes-team-v8/releases/download/v8.1.1/hermes-team-v8.1.1-windows.zip)
+2. **双击 `install.cmd`。** 向导会检测环境和执行器。选择已经初始化的 Hermes 配置目录，填写业务项目的绝对路径和项目 ID。
+3. **确认配置预览。** 向导会先备份，再配置项目、合并 Hook、生成管理 Skill，并运行自检。
+4. **双击 `start-hermes.cmd`。** 按各工具的原生提示完成模型设置、账号登录和首次 Hook 信任。以后可继续使用此入口启动。
 
 若显示 `needs_attention / hook_trust_pending`，表示仍待本人确认 Hook，不能视为全部就绪；向导不会代写信任记录。完整操作及恢复方法见 [向导说明](docs/windows-setup.md)。
 
@@ -45,7 +47,7 @@ v8.1.1 运行时 **112 项测试通过**，包括审批快照、取消竞争、�
 .\.setup-venv\Scripts\python.exe -X utf8 -B -m unittest discover -s tests/setup -v
 ```
 
-本次两组共 **141 项**，在 Windows 上使用隔离项目、模拟执行器和临时 Hermes 配置测试。
+从发布包解压后复跑，两组合计 **141 项通过**。测试使用隔离项目、模拟执行器和临时 Hermes 配置。[查看 v8.1.1 验收报告](https://github.com/dyc19991225/hermes-team-v8/releases/download/v8.1.1/ACCEPTANCE-RESULTS.md)
 
 实际配置见 [运行说明](docs/runtime-setup.md)：提供真实项目目录和 CLI 路径，配置脚本会生成被 Git 忽略的本机文件，拒绝覆盖已有配置。账号凭据、任务数据库、提示、原始运行日志和备份不随源码分发。
 
