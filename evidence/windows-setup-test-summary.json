@@ -9,11 +9,11 @@
   },
   "wizard_regression": {
     "status": "passed",
-    "tests_run": 24,
-    "duration_seconds": 4.131,
+    "tests_run": 28,
+    "duration_seconds": 4.101,
     "exit_code": 0
   },
-  "total_tests": 129,
+  "total_tests": 133,
   "model_calls": 0,
   "wizard_command": ".setup-venv/Scripts/python.exe -X utf8 -B -m unittest discover -s tests/setup -v",
   "validation": [
@@ -64,9 +64,9 @@
     "start-hermes.cmd": "c1a1378c1f5641d7b44cec88d99950fc9dade0cc0b4ed600ece304c0291fe75a",
     "requirements-setup.txt": "e4cae16434e8712861c10a35a1af1575de2980fe98a16b6385ddf4fd776d297c",
     "scripts/install-windows.ps1": "2d9e868f3f2c6de5fea1e40c89a195b438b25b395139e2b04781b1f3454b1e59",
-    "scripts/windows_setup.py": "bceb079bff895842aaec6c3497451d649ed537514795f9703622ec18fe0d7dcb",
+    "scripts/windows_setup.py": "01bdf5d04efb301f71e5c711ea54a709d8b910ab3df3c25b64efdc28cadd4737",
     "scripts/configure.py": "2eab62c827fa393bb6c34b14baa536609f0fc81025a256030d0dab0b358985a6",
-    "tests/setup/test_windows_setup.py": "c7c12dc9d222cec5e2dc4552ebfc8f8de2a2a035cf998f331819ae2afdecb811"
+    "tests/setup/test_windows_setup.py": "1e38480b2215a3d09383d86dfbc2e8f8563c0ddae7707bbfb1678c53a8636f77"
   },
   "limitations": [
     "Python installation via winget was not executed on a clean Windows machine",
@@ -75,7 +75,12 @@
     "No real model tasks or billing calls were made",
     "Windows-only validation; this is local author testing"
   ],
-  "clean_staged_export": {
+  "install_cmd_cancel": {
+    "status": "passed",
+    "exit_code": 130,
+    "configuration_written": false
+  },
+  "previous_release_clean_staged_export": {
     "method": "git checkout-index into a fresh Unicode and space-containing directory",
     "runtime": {
       "status": "passed",
@@ -92,9 +97,12 @@
     "total_tests": 129,
     "untracked_local_configuration_used": false
   },
-  "install_cmd_cancel": {
-    "status": "passed",
-    "exit_code": 130,
-    "configuration_written": false
+  "github_download_followup": {
+    "initial_commit": "adce99a9817f80f94a6970d3807b2b88586acb51",
+    "native_hermes_zero_exit_with_untrusted_hook_reproduced": true,
+    "fix_requires_explicit_native_healthy_report": true,
+    "selected_home_runtime_and_config_location_checked_before_writes": true,
+    "new_regressions": 4,
+    "raw_logs_published": false
   }
 }

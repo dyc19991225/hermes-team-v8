@@ -6,7 +6,7 @@
 
 ## 脱敏公开源码：2026-11-17
 
-Windows 向导另外通过 24 项测试，原有 105 项运行时回归重新通过。向导测试使用临时 Hermes 目录与假执行器，未进行真实账号登录、Hook 授权或模型调用；另进行了已有环境下的只读 CLI 检测和 PowerShell 入口取消检查，详见 [向导测试摘要](../evidence/windows-setup-test-summary.json)。
+Windows 向导使用临时 Hermes 目录与假执行器测试，未进行真实账号登录、Hook 授权或模型调用。从 GitHub ZIP 安装验证后补充了原生 doctor 返回 0 但 Hook 尚未信任，以及 Hermes home 未初始化或位置不匹配的回归，向导测试为 28 项，运行时回归为 105 项。详见 [向导测试摘要](../evidence/windows-setup-test-summary.json)。
 
 公开版本在 Windows / Python 3.13.15 下运行 **105 项测试全部通过**，用时 45.378 秒。原有 101 项之外，增加 4 项入口回归：从任意临时复制目录生成配置、init / bind / Hook 注入成功；拒绝覆盖配置；缺少注册配置时 Dispatcher 和 Hook 失败关闭；业务项目不能与控制仓库重叠。
 

@@ -451,6 +451,31 @@ def hermes_env(home):
     return env
 
 
+def validate_hermes_home(executable, home, *, run=native_run):
+    outcome = run([executable, 'config', 'path'], env=hermes_env(home), capture_output=True,
+                  text=True, encoding='utf-8', errors='replace', timeout=20)
+    lines = (outcome.stdout or '').strip().splitlines()
+    if outcome.returncode or not lines:
+        raise SetupError('所选目录无法启动该 Hermes 运行环境；请使用已初始化的 Hermes 配置目录。未修改 Team 配置。')
+    actual = Path(lines[-1].strip())
+    if not actual.is_absolute() or actual.resolve() != (Path(home)/'config.yaml').resolve():
+        raise SetupError('Hermes 实际配置位置与所选目录不一致；未写入配置。')
+
+
+def diagnostic_status(label, outcome):
+    result = {'exit_code': outcome.returncode,
+              'status': 'passed' if outcome.returncode == 0 else 'needs_attention'}
+    if label == 'hooks_doctor':
+        # Some Hermes versions print an issue count but still exit zero. Only
+        # its explicit healthy report confirms the newly configured Hook.
+        output = re.sub(r'\x1b\[[0-?]*[ -/]*[@-~]', '', (outcome.stdout or '')+'\n'+(outcome.stderr or ''))
+        healthy = 'All shell hooks look healthy.' in output
+        if outcome.returncode != 0 or not healthy:
+            result['status'] = 'needs_attention'
+            result['reason'] = 'hook_trust_pending' if 'not allowlisted' in output else 'native_health_not_confirmed'
+    return result
+
+
 def verify_installation(repo, home, project_id, hermes, *, run=native_run):
     env = hermes_env(home)
     # The setup process owns the maintenance gate; regular Dispatcher mutations
@@ -464,7 +489,7 @@ def verify_installation(repo, home, project_id, hermes, *, run=native_run):
     for label, args in (('config_check', ['config', 'check']), ('hooks_doctor', ['hooks', 'doctor'])):
         outcome = run([hermes, *args], env=env, capture_output=True, text=True,
                       encoding='utf-8', errors='replace', timeout=30)
-        results[label] = {'exit_code': outcome.returncode, 'status': 'passed' if outcome.returncode == 0 else 'needs_attention'}
+        results[label] = diagnostic_status(label, outcome)
     # Only this temporary binding is created; no model turns or business tasks.
     session = 'setup-probe-'+uuid.uuid4().hex
     db = repo/'dispatch'/'state.sqlite3'
@@ -550,6 +575,7 @@ def main(argv=None):
         home = Path(ask('Hermes 配置目录', str(hermes_home_for(hermes))))
         if not home.is_absolute():
             raise SetupError('Hermes 配置目录必须是绝对路径')
+        validate_hermes_home(hermes, home)
         print('请先关闭正在使用该配置的 Hermes 对话，避免写入竞争。向导不会结束其他进程。')
         project = Path(ask('已有业务项目的绝对目录（与此仓库分开）'))
         project_id = ask('项目 ID（小写字母、数字、连字符）', 'project-alpha')

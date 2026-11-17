@@ -230,10 +230,44 @@ class SetupTests(unittest.TestCase):
             self.assertEqual(conn.execute('SELECT count(*) FROM session_projects').fetchone()[0], 0)
         self.assertFalse((self.home/'shell-hooks-allowlist.json').exists())
 
+    def test_native_hooks_doctor_zero_exit_with_untrusted_hook_is_not_a_pass(self):
+        result = subprocess.CompletedProcess(['hermes', 'hooks', 'doctor'], 0,
+                     'Checking 1 configured shell hook(s)...\nnot allowlisted — hook will NOT fire at runtime\n1 issue(s) found.\n', '')
+        status = setup.diagnostic_status('hooks_doctor', result)
+        self.assertEqual(status['exit_code'], 0)
+        self.assertEqual(status['status'], 'needs_attention')
+        self.assertEqual(status['reason'], 'hook_trust_pending')
+        for output in ('', 'No shell hooks configured — nothing to check.'):
+            result.stdout = output
+            self.assertEqual(setup.diagnostic_status('hooks_doctor', result)['status'], 'needs_attention')
+
+    def test_native_hooks_doctor_requires_explicit_healthy_report(self):
+        result = subprocess.CompletedProcess(['hermes', 'hooks', 'doctor'], 0,
+                                            '\x1b[32mAll shell hooks look healthy.\x1b[0m\n', '')
+        self.assertEqual(setup.diagnostic_status('hooks_doctor', result)['status'], 'passed')
+        result.returncode = 1
+        self.assertEqual(setup.diagnostic_status('hooks_doctor', result)['status'], 'needs_attention')
+
+    def test_selected_hermes_home_must_have_a_working_runtime_and_matching_config(self):
+        for code, stdout in ((1, ''), (0, str(self.base/'another-home/config.yaml'))):
+            def run(argv, **kwargs):
+                self.assertEqual(argv[1:], ['config', 'path'])
+                self.assertEqual(kwargs['env']['HERMES_HOME'], str(self.home))
+                return subprocess.CompletedProcess(argv, code, stdout, '')
+            with self.subTest(code=code), self.assertRaises(setup.SetupError):
+                setup.validate_hermes_home(Path(sys.executable), self.home, run=run)
+        self.assertEqual((self.home/'config.yaml').read_bytes(), self.original)
+
+    def test_selected_initialized_hermes_home_is_accepted_without_model_calls(self):
+        def run(argv, **kwargs):
+            return subprocess.CompletedProcess(argv, 0, str(self.home/'config.yaml')+'\n', '')
+        setup.validate_hermes_home(Path(sys.executable), self.home, run=run)
+
     def test_interactive_cancel_changes_no_configuration(self):
         detected = {name: {'path': sys.executable, 'version': 'fixture'} for name in setup.TOOLS}
         answers = ['', '', 'n', 'n', '', str(self.project), '', 'n']
         with mock.patch.object(setup, 'REPO', self.repo), mock.patch.object(setup, 'detect_tools', return_value=detected), \
+             mock.patch.object(setup, 'validate_hermes_home'), \
              mock.patch.object(setup, 'hermes_home_for', return_value=self.home), mock.patch('builtins.input', side_effect=answers), \
              contextlib.redirect_stdout(io.StringIO()) as output:
             self.assertEqual(setup.main([]), 0)
@@ -245,6 +279,7 @@ class SetupTests(unittest.TestCase):
         detected = {name: {'path': sys.executable, 'version': 'fixture'} for name in setup.TOOLS}
         answers = ['', '', 'n', 'n', '', str(self.project), '', 'y']
         with mock.patch.object(setup, 'REPO', self.repo), mock.patch.object(setup, 'detect_tools', return_value=detected), \
+             mock.patch.object(setup, 'validate_hermes_home'), \
              mock.patch.object(setup, 'hermes_home_for', return_value=self.home), mock.patch('builtins.input', side_effect=answers), \
              mock.patch.object(setup, 'verify_installation', side_effect=setup.SetupError('fixture check failure')), \
              contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
@@ -265,6 +300,7 @@ class SetupTests(unittest.TestCase):
             self.assertTrue((self.repo/'dispatch'/'.v71-maintenance').is_file())
             return original_verify(*args, run=run)
         with mock.patch.object(setup, 'REPO', self.repo), mock.patch.object(setup, 'detect_tools', return_value=detected), \
+             mock.patch.object(setup, 'validate_hermes_home'), \
              mock.patch.object(setup, 'hermes_home_for', return_value=self.home), mock.patch('builtins.input', side_effect=answers), \
              mock.patch.object(setup, 'verify_installation', side_effect=verify), contextlib.redirect_stdout(io.StringIO()) as output:
             self.assertEqual(setup.main([]), 0)
