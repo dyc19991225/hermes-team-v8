@@ -16,6 +16,7 @@ import subprocess
 import sys
 import time
 import uuid
+from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -26,7 +27,6 @@ from policy import (
     DISPATCH_ROOT,
     PolicyError,
     build_cli_invocation,
-    check_execution_authorization,
     is_valid_uuid,
     load_agents,
     load_routing,
@@ -376,7 +376,8 @@ def dry_run_task(
     prepared = get_task(task_id, db_path=db_path)
     if prepared.get('run_token') or prepared['status'] not in ('CREATED','DRY_RUN','QUEUED'):
         raise PolicyError('Task already reserved, started or terminal; dry-run refused')
-    ok, reason = check_execution_authorization(prepared, agents_cfg, routing_cfg)
+    with closing(connect_db(db_path)) as conn:
+        ok, reason = wf.authorize(conn, prepared, agents_cfg, routing_cfg, timeout_override)
     if not ok:
         raise PolicyError(f'Authorization check failed: {reason}')
     invocation = _prepare_invocation(prepared, agents_cfg, routing_cfg, timeout_override, prepare=False)
@@ -397,7 +398,7 @@ def dry_run_task(
             conn.execute("ROLLBACK;")
             raise PolicyError(f"Task status {task['status']} cannot enter DRY_RUN")
 
-        ok, reason = check_execution_authorization(task, agents_cfg, routing_cfg)
+        ok, reason = wf.authorize(conn, task, agents_cfg, routing_cfg, timeout_override)
         if not ok:
             conn.execute("ROLLBACK;")
             raise PolicyError(f"Authorization check failed: {reason}")
@@ -443,28 +444,69 @@ def dry_run_task(
     }
 
 
-def _parse_cli_json(stdout: str, json_mode: str) -> tuple[bool, Any, str]:
-    text = (stdout or "").strip()
-    if not text:
-        return False, None, "Empty stdout"
-    if json_mode == "jsonl":
-        events: list[Any] = []
-        for idx, line in enumerate(text.splitlines(), 1):
-            stripped = line.strip()
-            if not stripped:
-                continue
-            try:
-                events.append(json.loads(stripped))
-            except json.JSONDecodeError as exc:
-                return False, None, f"Invalid JSONL at line {idx}: {exc}"
-        if not events:
-            return False, None, "No JSONL events found"
-        return True, events, ""
-    try:
-        parsed = json.loads(text)
-    except json.JSONDecodeError as exc:
-        return False, None, f"Invalid JSON output: {exc}"
-    return True, parsed, ""
+INLINE_RESULT_BYTES = 4 * 1024 * 1024
+RESULT_TAIL_BYTES = 8192
+
+
+def output_text(path):
+    size = path.stat().st_size
+    truncated = size > INLINE_RESULT_BYTES
+    with path.open('rb') as stream:
+        if truncated:
+            stream.seek(size - RESULT_TAIL_BYTES)
+        return stream.read().decode('utf-8', errors='replace'), truncated
+
+
+def parse_result_stream(path, json_mode, agent, stdout_text, truncated):
+    """Validate all recorded output while keeping large reports bounded."""
+    events = []
+    terminal = None
+    agy_status = None
+    reported_error = False
+
+    def observe(event, size):
+        nonlocal reported_error, agy_status, terminal
+        if not isinstance(event, dict):
+            return
+        result = event.get('result')
+        agy_final = event.get('event') == 'result' and isinstance(result, dict)
+        typed_final = event.get('type') == 'result'
+        error = event.get('is_error') is True or (typed_final and str(event.get('subtype', '')).startswith('error'))
+        reported_error = reported_error or error
+        if agy_final:
+            agy_status = result.get('status')
+        if truncated and (typed_final or agy_final):
+            terminal = event if size <= INLINE_RESULT_BYTES else {
+                'type': 'result', 'is_error': error, 'content_in_stdout_log': True}
+
+    if json_mode == 'jsonl':
+        seen = False
+        with path.open('rb') as stream:
+            for index, raw in enumerate(stream, 1):
+                if not raw.strip():
+                    continue
+                try:
+                    event = json.loads(raw.decode('utf-8', errors='replace'))
+                except json.JSONDecodeError as exc:
+                    return False, None, f'Invalid JSONL at line {index}: {exc}', reported_error
+                observe(event, len(raw))
+                if not truncated:
+                    events.append(event)
+                seen = True
+        if not seen:
+            return False, None, 'Empty stdout', reported_error
+        parsed = ([terminal] if terminal is not None else []) if truncated else events
+    else:
+        # Single-object adapters are bounded by the configured output byte budget.
+        raw = path.read_text(encoding='utf-8', errors='replace') if truncated else stdout_text
+        try:
+            event = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            return False, None, f'Invalid JSON output: {exc}', reported_error
+        for item in event if isinstance(event, list) else [event]:
+            observe(item, len(raw))
+        parsed = terminal if truncated else event
+    return True, parsed, '', reported_error or (agent == 'agy' and agy_status != 'SUCCESS')
 
 
 def _owner_gone(pid, start) -> bool:
@@ -503,21 +545,31 @@ def run_task(task_id: str, *, timeout_override: int | None = None,
     stdout_path=results_dir/f'{task_id}.stdout.log'
     stderr_path=results_dir/f'{task_id}.stderr.log'
     token=launch_token or str(uuid.uuid4())
+    owner_pid = os.getpid()
+    state, owner_start = process_identity(owner_pid)
+    if state != 'alive' or not owner_start:
+        raise PolicyError('Cannot establish dispatcher identity')
+    if launch_token:
+        # Acknowledge this reservation before doing slow preparation.
+        with closing(connect_db(db_path)) as conn:
+            changed = conn.execute("""UPDATE tasks SET owner_pid=?,owner_start=?
+                WHERE task_id=? AND status='QUEUED' AND run_token=? AND owner_pid IS NULL""",
+                (owner_pid, owner_start, task_id, token)).rowcount
+        if not changed:
+            raise PolicyError('Stale or already acknowledged launch token')
     prepared=get_task(task_id,db_path=db_path)
     if launch_token:
         if prepared['run_token']!=token or prepared['status']!='QUEUED':
             raise PolicyError('Stale launch token or task not queued')
     elif prepared['status'] not in ('CREATED','DRY_RUN','QUEUED') or prepared['run_token']:
         raise PolicyError('Task already started or terminal')
-    ok,reason=check_execution_authorization(prepared,agents_cfg,routing_cfg)
-    if not ok:raise PolicyError(reason)
-    with __import__('contextlib').closing(connect_db(db_path)) as preflight:
+    with closing(connect_db(db_path)) as preflight:
+        ok,reason=wf.authorize(preflight,prepared,agents_cfg,routing_cfg,timeout_override)
+        if not ok:raise PolicyError(reason)
         wf.require_ready(preflight,task_id)
         budget=wf.budget_for(preflight,task_id)
     invocation=_prepare_invocation(prepared,agents_cfg,routing_cfg,timeout_override,prepare=True)
     invocation['budget']=budget
-    owner_pid=os.getpid(); state,owner_start=process_identity(owner_pid)
-    if state!='alive' or not owner_start: raise PolicyError('Cannot establish dispatcher identity')
     conn=connect_db(db_path)
     try:
         conn.execute('BEGIN IMMEDIATE')
@@ -530,7 +582,7 @@ def run_task(task_id: str, *, timeout_override: int | None = None,
             if task['run_token']!=token or task['status']!='QUEUED': raise PolicyError('Stale launch token or task not queued')
         elif task['status'] not in ('CREATED','DRY_RUN','QUEUED') or task['run_token']:
             raise PolicyError('Task already started or terminal')
-        ok,reason=check_execution_authorization(task,agents_cfg,routing_cfg)
+        ok,reason=wf.authorize(conn,task,agents_cfg,routing_cfg,timeout_override)
         if not ok: raise PolicyError(reason)
         wf.require_ready(conn,task_id)
         is_write=bool(routing_cfg['task_types'][task['task_type']].get('write',False)) or bool(routing_cfg.get('project_registry'))
@@ -585,24 +637,17 @@ def run_task(task_id: str, *, timeout_override: int | None = None,
     started=time.monotonic(); exit_code=-1; timed_out=False; cancelled=False
     json_ok=False; parsed=None; json_error=''; error=None; safe_cleanup=True
     stdout_text=''; stderr_text=''; final_status='FAILED'
+    stdout_truncated=False; stderr_truncated=False
     report={}
     usage={'available':False};budget_exceeded=None
     try:
         outcome=execute_streaming(invocation,stdout_path,stderr_path,heartbeat)
         exit_code=outcome['exit_code']; timed_out=outcome['timed_out']; cancelled=outcome['cancelled']
         usage=outcome.get('usage',{'available':False});budget_exceeded=outcome.get('budget_exceeded')
-        # Full raw streams remain on disk; refuse to parse an unbounded document.
-        for path in (stdout_path,stderr_path):
-            if path.stat().st_size>4*1024*1024: raise PolicyError('Output exceeds 4 MiB parse limit; full logs retained')
-        stdout_text=stdout_path.read_text(encoding='utf-8',errors='replace')
-        stderr_text=stderr_path.read_text(encoding='utf-8',errors='replace')
-        json_ok,parsed,json_error=_parse_cli_json(stdout_text,invocation['json_mode'])
-        events=parsed if isinstance(parsed,list) else [parsed]
-        reported_error=any(isinstance(e,dict) and (e.get('is_error') is True or
-            (e.get('type')=='result' and str(e.get('subtype','')).startswith('error'))) for e in events)
-        if task['agent']=='agy':
-            finals=[e.get('result') for e in events if isinstance(e,dict) and e.get('event')=='result' and isinstance(e.get('result'),dict)]
-            if not finals or finals[-1].get('status')!='SUCCESS':reported_error=True
+        stdout_text,stdout_truncated=output_text(stdout_path)
+        stderr_text,stderr_truncated=output_text(stderr_path)
+        json_ok,parsed,json_error,reported_error=parse_result_stream(
+            stdout_path,invocation['json_mode'],task['agent'],stdout_text,stdout_truncated)
         if cancelled: error='Cancelled by request; process job stopped'
         elif timed_out: error=f"Timed out after {invocation['timeout']}s; process job stopped"
         elif budget_exceeded: error='Task budget exceeded: '+budget_exceeded
@@ -621,6 +666,7 @@ def run_task(task_id: str, *, timeout_override: int | None = None,
             'execution_mode':task['execution_mode'],'status':final_status,'exit_code':exit_code,
             'duration_seconds':duration,'timed_out':timed_out,'json_parse_ok':json_ok,
             'json_parse_error':json_error or None,'error':error,'stdout':stdout_text,'stderr':stderr_text,
+            'stdout_truncated':stdout_truncated,'stderr_truncated':stderr_truncated,
             'stdout_log':str(stdout_path),'stderr_log':str(stderr_path),'parsed_output':parsed,'finished_at':utc_now()}
         report.update(usage=usage,budget_exceeded=budget_exceeded)
         conn=connect_db(db_path)
@@ -690,7 +736,7 @@ def cancel_task(task_id: str, *, db_path: Path = DEFAULT_DB_PATH) -> dict[str, A
             # QUEUED cancellation wins under the same transaction as worker claim.
             conn.execute("UPDATE tasks SET status='CANCELLED',cancel_requested=1,updated_at=? WHERE task_id=?",(utc_now(),task_id))
             _record_event(conn,task_id,row['status'],'CANCELLED','cancelled before execution')
-            conn.execute("UPDATE task_queue SET state='CANCELLED',reason='cancelled_by_request' WHERE task_id=?",(task_id,))
+            wf.reset_claim(conn, task_id, 'CANCELLED', 'cancelled_by_request')
         conn.execute('COMMIT')
     except BaseException:
         if conn.in_transaction: conn.execute('ROLLBACK')
@@ -700,7 +746,7 @@ def cancel_task(task_id: str, *, db_path: Path = DEFAULT_DB_PATH) -> dict[str, A
     return get_task(task_id,db_path=db_path)
 
 
-def launch_background(task_id: str, *, timeout_override=None, db_path=DEFAULT_DB_PATH) -> dict[str,Any]:
+def launch_background(task_id: str, *, timeout_override=None, db_path=DEFAULT_DB_PATH, claim_token=None) -> dict[str,Any]:
     """Reserve once and detach a fixed dispatcher worker. No shell or caller-supplied code."""
     init_db(db_path)
     # Validate before spawning or changing status. Includes timeout bounds.
@@ -710,7 +756,11 @@ def launch_background(task_id: str, *, timeout_override=None, db_path=DEFAULT_DB
         conn.execute('BEGIN IMMEDIATE')
         row=conn.execute('SELECT * FROM tasks WHERE task_id=?',(task_id,)).fetchone()
         if row['status']!='DRY_RUN' or row['run_token']: raise PolicyError('Task already reserved')
-        conn.execute("UPDATE tasks SET status='QUEUED',run_token=?,updated_at=? WHERE task_id=?",(token,utc_now(),task_id))
+        if claim_token is not None and not conn.execute("""SELECT 1 FROM task_queue
+                WHERE task_id=? AND state='DISPATCHING' AND claim_token=?""", (task_id, claim_token)).fetchone():
+            raise PolicyError('Queue claim is no longer active')
+        conn.execute("""UPDATE tasks SET status='QUEUED',run_token=?,owner_pid=NULL,owner_start=NULL,updated_at=?
+            WHERE task_id=?""", (token,utc_now(),task_id))
         _record_event(conn,task_id,'DRY_RUN','QUEUED','background reservation')
         conn.execute('COMMIT')
     except BaseException:
@@ -729,7 +779,7 @@ def launch_background(task_id: str, *, timeout_override=None, db_path=DEFAULT_DB
         deadline=time.monotonic()+5
         while time.monotonic()<deadline:
             task=get_task(task_id,db_path=db_path)
-            if task['status']!='QUEUED': return task
+            if task['status']!='QUEUED' or task['run_token']!=token: return task
             if proc.poll() is not None: raise PolicyError('Background worker exited before claim; inspect worker log')
             time.sleep(.05)
         return get_task(task_id,db_path=db_path)
@@ -739,7 +789,9 @@ def launch_background(task_id: str, *, timeout_override=None, db_path=DEFAULT_DB
             conn.execute('BEGIN IMMEDIATE')
             changed=conn.execute("UPDATE tasks SET status='FAILED',error=?,updated_at=? WHERE task_id=? AND run_token=? AND status='QUEUED'",
                 (str(exc),utc_now(),task_id,token)).rowcount
-            if changed: _record_event(conn,task_id,'QUEUED','FAILED',str(exc))
+            if changed:
+                _record_event(conn,task_id,'QUEUED','FAILED',str(exc))
+                wf.reset_claim(conn, task_id, 'DONE', type(exc).__name__)
             conn.execute('COMMIT')
         finally: conn.close()
         raise
@@ -761,7 +813,7 @@ def main(argv: list[str] | None = None) -> int:
     # Hermes and the task logs exchange UTF-8 even on a GBK Windows console.
     for stream in (sys.stdout,sys.stderr):
         if hasattr(stream,'reconfigure'):stream.reconfigure(encoding='utf-8',errors='replace')
-    parser = argparse.ArgumentParser(description="Hermes Team V8.1 Dispatcher")
+    parser = argparse.ArgumentParser(description=f"Hermes Team V{wf.VERSION} Dispatcher")
     parser.add_argument("--db", default=str(DEFAULT_DB_PATH), help="SQLite DB path")
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -769,6 +821,9 @@ def main(argv: list[str] | None = None) -> int:
 
     p_create = sub.add_parser("create", help="Create a task from validated inbox JSON file")
     p_create.add_argument("--file", required=True, help="Path to task JSON file")
+    p_approve = sub.add_parser('approve', help='Approve a high-risk task in a local interactive terminal')
+    p_approve.add_argument('--task-id', required=True)
+    p_approve.add_argument('--session-id', required=True)
 
     p_dry = sub.add_parser("dry-run", help="Validate and prepare task without running CLI")
     p_dry.add_argument("--task-id", required=True, help="Task UUID")
@@ -856,6 +911,13 @@ def main(argv: list[str] | None = None) -> int:
             task = create_task(spec, db_path=db_path)
             print(json.dumps(task, ensure_ascii=False, indent=2))
             return 0
+        if args.command == 'approve':
+            try:
+                result = wf.approve(args.task_id, args.session_id, db_path)
+            except (EOFError, KeyboardInterrupt) as exc:
+                raise PolicyError('Approval cancelled') from exc
+            print(json.dumps(result, ensure_ascii=True))
+            return 0
         if args.command == "dry-run":
             res = dry_run_task(args.task_id, timeout_override=args.timeout, db_path=db_path)
             print(json.dumps(res, ensure_ascii=False, indent=2))
@@ -881,10 +943,12 @@ def main(argv: list[str] | None = None) -> int:
                 conn=connect_db(db_path)
                 try:
                     conn.execute('BEGIN IMMEDIATE')
-                    changed=conn.execute("UPDATE tasks SET status='FAILED',error=?,updated_at=? WHERE task_id=? AND run_token=? AND status='QUEUED'",
-                        (str(exc),utc_now(),args.task_id,args.token)).rowcount
+                    changed=conn.execute("""UPDATE tasks SET status='FAILED',error=?,updated_at=?
+                        WHERE task_id=? AND run_token=? AND status='QUEUED' AND (owner_pid IS NULL OR owner_pid=?)""",
+                        (str(exc),utc_now(),args.task_id,args.token,os.getpid())).rowcount
                     if changed: _record_event(conn,args.task_id,'QUEUED','FAILED',str(exc))
-                    if changed:conn.execute("UPDATE task_queue SET state='DONE',reason=? WHERE task_id=?",(type(exc).__name__,args.task_id))
+                    if changed:
+                        wf.reset_claim(conn, args.task_id, 'DONE', type(exc).__name__)
                     conn.execute('COMMIT')
                 finally: conn.close()
                 wf.wake(db_path)

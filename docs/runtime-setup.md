@@ -13,7 +13,7 @@ dispatch/
   project_manager.py    项目、会话、上下文和权限适配
   codex_worker.py       Codex app-server 协议
   process_runtime.py    Windows Job Objects、输出、停止和预算
-  workflow.py           队列、依赖、验收、用量和诊断
+  workflow.py           队列、人工审批、依赖、验收、用量和诊断
   team-policy.py        Hermes pre_tool_call Hook
   tests/                回归与本地进程集成测试
 config/                 无账号信息的 agents / routing 模板
@@ -56,6 +56,16 @@ python -X utf8 dispatch/dispatcher.py doctor --session-id my-chat
 
 任务 JSON 可参照 [示例](../examples/task.example.json)，把路径和会话换成实际值。普通终端需要显式 `session_id`；Hermes 接入后由 Hook 注入真实会话。新任务应依次 create、dry-run、run、status；高风险审批和独立验收仍为两个状态。
 
+### 高风险任务审批
+
+高风险任务创建后等待操作者确认。请在本机 PowerShell 打开控制仓库，使用任务 UUID 和已绑定到同一项目的会话 ID：
+
+```powershell
+python -X utf8 -B dispatch/dispatcher.py approve --task-id <任务UUID> --session-id <已绑定会话ID>
+```
+
+命令会显示项目、执行器、模式、超时和完整提示。核对后输入完整任务 UUID 确认，再进行 dry-run 和 run。审批命令只接受交互式终端，Hermes Hook 会拒绝代理调用。此前账本中的审批状态保留作记录，仍待执行的高风险任务需要按同一流程确认。已经排队的旧任务可先取消，再新建并审批；审批后如需修改提示或超时，请新建任务。
+
 ## 接入 Hermes
 
 将 [管理 Skill 模板](../skills/team-project-manager/SKILL.md) 中的控制仓库路径、项目 ID 和项目根目录换成本机配置后，放到自己的 Hermes Skill 目录。项目 B 仅为示例，必须先登记才能使用。
@@ -77,4 +87,4 @@ hooks:
 
 仓库收录明确列出的程序、测试、虚构配置和验证摘要。`agents.json`、`routing.json`、注册中心和每次任务生成的提示、结果、数据库、进程日志、会话记录、备份均保留本地。不要把整个 Hermes / Codex / Claude / AGY 用户目录复制进仓库。
 
-公开版本保持全局串行、无自动重试和现有权限策略。日志默认 16 MiB；Token 阈值依赖执行器上报，不能保证账单上限。验收程序只检查证据结构和归属，测试真实性与交付质量需要独立核对。
+公开版本全局串行。队列可重新派发已确认尚未开始执行的中断预留，已经开始执行的任务无自动重试。默认合计保存 16 MiB 日志。单路输出超过 4 MiB 时，结果只内联有限尾部，原始文件仍可查阅。JSONL 会逐行校验，合法的大输出可正常完成。Token 阈值依赖执行器上报，不能保证账单上限。验收程序只检查证据结构和归属，测试真实性与交付质量需要独立核对。

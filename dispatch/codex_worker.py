@@ -61,7 +61,7 @@ def main(probe=False):
                 return message['result']
             if 'method' in message:pending.append(message)
     try:
-        request('initialize',{'clientInfo':{'name':'hermes_team_v8','version':'8.1.0'},'capabilities':{'experimentalApi':True}})
+        request('initialize',{'clientInfo':{'name':'hermes_team_v8','version':'8.1.1'},'capabilities':{'experimentalApi':True}})
         send('initialized',notification=True)
         started=request('thread/start',{'cwd':spec['root'],'approvalPolicy':'never','permissions':name,'ephemeral':True})
         active=started.get('activePermissionProfile') or {}

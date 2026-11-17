@@ -20,7 +20,8 @@ import uuid
 from ruamel.yaml import YAML
 from configure import REPO, configuration, existing_absolute
 sys.path.insert(0, str(REPO/'dispatch'))
-from process_runtime import OwnedProcess
+from process_runtime import OwnedProcess, process_identity
+from workflow import VERSION
 
 TOOLS = ('hermes', 'codex', 'claude', 'agy')
 MATCHER = 'write_file|patch|read_file|search_files|session_search|read_terminal|terminal|delegate_task|execute_code|skill_manage|memory|cronjob_manage|process_manage|desktop_project|todo_list|browser_exec|browser_cdp|browser_vault|manage_catalog|manage_connections|computer_use|image_generate|text_to_speech'
@@ -309,7 +310,7 @@ def plan_setup(repo, project, project_id, executables, home, hermes, *, replace_
     skill = skill.replace('D:/example-workspace/project-alpha', project.as_posix())
     skill = '\n'.join(line for line in skill.splitlines() if '进入示例项目 B' not in line and not line.startswith('这是公开模板：'))
     skill = skill.replace('project-alpha', project_id)
-    state = {'version': '8.1.0', 'project_id': project_id, 'project_root': str(project),
+    state = {'version': VERSION, 'project_id': project_id, 'project_root': str(project),
              'hermes_home': str(home), 'hermes_executable': str(hermes), 'python': sys.executable}
     targets = [(repo/'dispatch'/'agents.json', json_bytes(agents)),
                (repo/'dispatch'/'routing.json', json_bytes(routing)), (registry_path, json_bytes(registry)),
@@ -324,7 +325,7 @@ def plan_setup(repo, project, project_id, executables, home, hermes, *, replace_
     return Plan(repo, home, changes, replaced)
 
 
-def atomic_write(path, raw):
+def atomic_write(path, raw, *, exclusive=False):
     check_path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     temp = path.with_name(path.name+'.team-setup-'+uuid.uuid4().hex+'.tmp')
@@ -333,7 +334,10 @@ def atomic_write(path, raw):
             output.write(raw)
             output.flush()
             os.fsync(output.fileno())
-        os.replace(temp, path)
+        if exclusive:
+            os.rename(temp, path)  # Windows rename fails if the destination exists.
+        else:
+            os.replace(temp, path)
     finally:
         if temp.exists():
             temp.unlink()
@@ -350,28 +354,35 @@ def restore_backup(repo, backup):
     backup = check_path(backup)
     if backup.parent != repo/'local-config'/'backups':
         raise SetupError('只能恢复本仓库 local-config/backups 下的向导备份')
-    data = json.loads((backup/'manifest.json').read_text(encoding='utf-8'))
+    data = json.loads(check_path(backup/'manifest.json').read_text(encoding='utf-8'))
     home = check_path(Path(data['hermes_home']))
     allowed = allowed_targets(repo, home)
     ensure_idle(repo)
     changes = []
+    seen = set()
     for item in data['files']:
         path = check_path(Path(item['path']))
-        if path not in allowed:
-            raise SetupError('备份包含未授权目标')
+        if path not in allowed or path in seen:
+            raise SetupError('备份包含未授权或重复目标')
+        seen.add(path)
         current = read_optional(path)
-        if digest(current) != item['after_sha256']:
+        current_hash = digest(current)
+        if current_hash == item['before_sha256']:
+            continue
+        if current_hash != item['after_sha256']:
             raise SetupError('安装后文件已被其他程序修改，停止恢复以保留新改动：'+str(path))
         original = None
         if item['backup_file'] is not None:
             saved = backup/item['backup_file']
             if saved.parent != backup:
                 raise SetupError('无效备份文件名')
-            original = saved.read_bytes()
-            if digest(original) != item['before_sha256']:
-                raise SetupError('备份校验失败')
-        changes.append((path, original))
-    for path, original in reversed(changes):
+            original = check_path(saved).read_bytes()
+        if digest(original) != item['before_sha256']:
+            raise SetupError('备份校验失败')
+        changes.append((path, original, current_hash))
+    for path, original, installed_hash in reversed(changes):
+        if digest(read_optional(path)) != installed_hash:
+            raise SetupError('恢复过程中检测到新改动，已停止：'+str(path))
         if original is None:
             path.unlink()
         else:
@@ -392,19 +403,21 @@ def apply_plan(plan):
     for index, change in enumerate(plan.changes):
         saved = f'{index}.bak' if change.before is not None else None
         if saved:
-            (backup/saved).write_bytes(change.before)
+            atomic_write(backup/saved, change.before)
         records.append({'path': str(change.path), 'backup_file': saved,
                         'before_sha256': digest(change.before), 'after_sha256': digest(change.after)})
-    (backup/'manifest.json').write_bytes(json_bytes({'hermes_home': str(plan.home), 'files': records}))
-    written = []
+    # Persist the before/after hashes before touching any target. Recovery uses
+    # the actual bytes to detect which replacements reached disk.
+    atomic_write(backup/'manifest.json', json_bytes({'hermes_home': str(plan.home), 'files': records}))
+    attempted = []
     try:
         for change in plan.changes:
             if read_optional(change.path) != change.before:
                 raise SetupError('文件在安装期间被修改：'+str(change.path))
+            attempted.append(change)
             atomic_write(change.path, change.after)
-            written.append(change)
     except BaseException:
-        for change in reversed(written):
+        for change in reversed(attempted):
             if read_optional(change.path) == change.after:
                 if change.before is None:
                     change.path.unlink()
@@ -415,21 +428,59 @@ def apply_plan(plan):
 
 
 @contextmanager
-def maintenance(repo):
+def setup_mutex(repo):
+    """OS releases this lock on exit even if Python cannot run its cleanup."""
+    import msvcrt
+    path = check_path(Path(repo)/'dispatch'/'.team-setup.lock')
+    with path.open('a+b') as stream:
+        stream.seek(0)
+        try:
+            msvcrt.locking(stream.fileno(), msvcrt.LK_NBLCK, 1)
+        except OSError as exc:
+            raise SetupError('已有维护或安装在进行。') from exc
+        yield
+
+
+def interrupted_setup(marker):
+    try:
+        data = json.loads(marker)
+        pid = data.get('pid')
+        if data.get('owner') != 'windows-setup' or type(pid) is not int or pid <= 0 or not data.get('token'):
+            return False
+        state, start = process_identity(pid)
+        recorded_start = data.get('start')
+        return state == 'gone' or (state == 'alive' and start and recorded_start and start != recorded_start)
+    except (ValueError, AttributeError, OSError):
+        return False
+
+
+@contextmanager
+def maintenance(repo, *, recover=False):
     flag = Path(repo)/'dispatch'/'.v71-maintenance'
     check_path(flag)
-    marker = json_bytes({'owner': 'windows-setup', 'pid': os.getpid(), 'token': uuid.uuid4().hex})
-    try:
-        with flag.open('xb') as output:
-            output.write(marker)
-    except FileExistsError as exc:
-        raise SetupError('已有维护或安装在进行；未覆盖别人的维护标志。') from exc
-    try:
-        ensure_idle(repo)
-        yield
-    finally:
-        if flag.is_file() and flag.read_bytes() == marker:
-            flag.unlink()
+    state, start = process_identity(os.getpid())
+    if state != 'alive' or not start:
+        raise SetupError('无法确认当前安装进程身份。')
+    marker = json_bytes({'owner': 'windows-setup', 'pid': os.getpid(), 'start': start, 'token': uuid.uuid4().hex})
+    with setup_mutex(repo):
+        previous = read_optional(flag)
+        if previous is not None and not (recover and interrupted_setup(previous)):
+            raise SetupError('已有维护或安装标志。若安装异常中断，请使用 --restore 与对应备份。')
+        try:
+            atomic_write(flag, marker, exclusive=previous is None)
+        except FileExistsError as exc:
+            raise SetupError('已有维护或安装在进行。') from exc
+        completed = False
+        try:
+            ensure_idle(repo)
+            yield
+            completed = True
+        finally:
+            if read_optional(flag) == marker:
+                if previous is not None and not completed:
+                    atomic_write(flag, previous)
+                else:
+                    flag.unlink()
 
 
 def perform_install(plan, project_id, hermes, *, verify=None):
@@ -552,7 +603,7 @@ def main(argv=None):
     installed = False
     try:
         if args.restore:
-            with maintenance(REPO):
+            with maintenance(REPO, recover=True):
                 restore_backup(REPO, args.restore)
             print('配置已恢复；账本和账号文件未回滚。')
             return 0

@@ -183,6 +183,10 @@ def validate_task_spec(
     approval_state = spec.get("approval_state", "not_required")
     if approval_state not in approval_states:
         raise PolicyError(f"Invalid approval_state: {approval_state}")
+    if approval_state == "approved":
+        raise PolicyError("Approval is recorded by the local operator")
+    if risk_levels[risk_level].get("requires_approval") and approval_state != "denied":
+        approval_state = "pending"
 
     timeout = spec.get("timeout", agent_spec.get("default_timeout_seconds", 120))
     max_t = int(agent_spec.get("max_timeout_seconds", 600))
@@ -215,6 +219,8 @@ def check_execution_authorization(
     task_row: dict[str, Any],
     agents_cfg: dict[str, Any] | None = None,
     routing_cfg: dict[str, Any] | None = None,
+    *,
+    approval_verified: bool = False,
 ) -> tuple[bool, str]:
     agents_cfg = agents_cfg or load_agents()
     routing_cfg = routing_cfg or load_routing()
@@ -246,8 +252,8 @@ def check_execution_authorization(
 
     approval_state = task_row.get("approval_state")
     if risk_cfg.get("requires_approval", True):
-        if approval_state != "approved":
-            return False, f"High-risk task requires approval_state='approved' (got {approval_state!r})"
+        if approval_state != "approved" or not approval_verified:
+            return False, "High-risk task requires verified operator approval"
     else:
         if approval_state in ("pending", "denied"):
             return False, f"Task approval_state is {approval_state!r}"

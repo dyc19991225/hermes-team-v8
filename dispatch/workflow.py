@@ -6,6 +6,7 @@ and process-ownership checks remain authoritative.
 """
 from contextlib import closing
 from pathlib import Path
+import hashlib
 import json
 import os
 import sqlite3
@@ -15,10 +16,10 @@ import time
 import uuid
 import re
 
-from policy import PolicyError, is_valid_uuid
+from policy import PolicyError, check_execution_authorization, is_valid_uuid
 import project_manager as pm
 
-VERSION = '8.1.0'
+VERSION = '8.1.1'
 TERMINAL = ('SUCCEEDED', 'FAILED', 'CANCELLED', 'BLOCKED')
 
 
@@ -27,6 +28,7 @@ def migrate(conn):
         "CREATE TABLE IF NOT EXISTS task_options(task_id TEXT PRIMARY KEY REFERENCES tasks(task_id), budget_json TEXT NOT NULL)",
         "CREATE TABLE IF NOT EXISTS task_dependencies(task_id TEXT NOT NULL REFERENCES tasks(task_id), depends_on TEXT NOT NULL REFERENCES tasks(task_id), PRIMARY KEY(task_id,depends_on), CHECK(task_id<>depends_on))",
         "CREATE TABLE IF NOT EXISTS task_reviews(task_id TEXT PRIMARY KEY REFERENCES tasks(task_id), decision TEXT NOT NULL CHECK(decision IN ('ACCEPTED','REJECTED')), evidence_json TEXT NOT NULL, reviewer_session TEXT NOT NULL, reviewed_at TEXT NOT NULL)",
+        "CREATE TABLE IF NOT EXISTS task_approvals(task_id TEXT PRIMARY KEY REFERENCES tasks(task_id), fingerprint TEXT NOT NULL, approved_at TEXT NOT NULL)",
         "CREATE TABLE IF NOT EXISTS task_queue(task_id TEXT PRIMARY KEY REFERENCES tasks(task_id), state TEXT NOT NULL CHECK(state IN ('WAITING','DISPATCHING','RUNNING','DONE','BLOCKED','CANCELLED')), requested_at TEXT NOT NULL, reason TEXT, claim_token TEXT, claim_pid INTEGER, claim_start TEXT)",
         "CREATE TABLE IF NOT EXISTS task_usage(task_id TEXT PRIMARY KEY REFERENCES tasks(task_id), usage_json TEXT NOT NULL, duration_seconds REAL NOT NULL, finished_at TEXT NOT NULL)",
         "CREATE TABLE IF NOT EXISTS adapter_checks(agent TEXT PRIMARY KEY, result_json TEXT NOT NULL, checked_at TEXT NOT NULL)",
@@ -108,6 +110,72 @@ def scoped_task(conn, task_id, session_id, cfg):
     return dict(row)
 
 
+def approval_fingerprint(task):
+    fields = ('task_id', 'project_id', 'project_root', 'agent', 'task_type',
+              'risk_level', 'execution_mode', 'prompt_sha256', 'timeout_seconds')
+    snapshot = json.dumps([task.get(key) for key in fields], ensure_ascii=True)
+    return hashlib.sha256(snapshot.encode('ascii')).hexdigest()
+
+
+def authorize(conn, task, agents, cfg, timeout_override=None):
+    requires_approval = cfg['risk_levels'].get(task['risk_level'], {}).get('requires_approval', True)
+    verified = False
+    if requires_approval:
+        if timeout_override is not None and timeout_override != task['timeout_seconds']:
+            return False, 'Approved task timeout cannot be changed'
+        table = conn.execute("SELECT 1 FROM sqlite_master WHERE name='task_approvals' AND type='table'").fetchone()
+        if table:
+            row = conn.execute('SELECT fingerprint FROM task_approvals WHERE task_id=?', (task['task_id'],)).fetchone()
+            verified = bool(task['prompt_sha256'] and row and row[0] == approval_fingerprint(task))
+    return check_execution_authorization(task, agents, cfg, approval_verified=verified)
+
+
+def approve(task_id, session_id, db_path):
+    """Only the local operator CLI exposes this operation; the Hermes Hook denies it."""
+    import dispatcher as d
+    if not sys.stdin.isatty() or not sys.stdout.isatty():
+        raise PolicyError('Approval requires an interactive local terminal')
+    if not is_valid_uuid(task_id):
+        raise PolicyError('Invalid task UUID')
+    d.init_db(db_path)
+    cfg = d.load_routing()
+
+    def eligible(task):
+        if not cfg['risk_levels'].get(task['risk_level'], {}).get('requires_approval'):
+            raise PolicyError('This task does not require approval')
+        if task['run_token'] or task['status'] not in ('AWAITING_APPROVAL', 'CREATED', 'DRY_RUN'):
+            raise PolicyError('Only unreserved tasks can be approved')
+        if task['approval_state'] == 'denied' or not task['prompt_sha256']:
+            raise PolicyError('Task is denied or has no verified prompt snapshot')
+
+    with closing(d.connect_db(db_path)) as conn:
+        task = scoped_task(conn, task_id, session_id, cfg)
+        eligible(task)
+    fingerprint = approval_fingerprint(task)
+    prompt = d.read_task_prompt(task)
+    # Escape unprintable characters before displaying the task in the terminal.
+    display = ''.join(ch if ch == '\n' or ch.isprintable() else ascii(ch)[1:-1] for ch in prompt)
+    print(f"Task {task_id} in {task['project_root']}\n"
+          f"Agent {task['agent']} / {task['task_type']} / {task['execution_mode']}\n"
+          f"Timeout {task['timeout_seconds']} seconds\n\n{display}\n")
+    if input(f'To approve, type the task ID {task_id}: ').strip() != task_id:
+        raise PolicyError('Approval cancelled')
+    with closing(d.connect_db(db_path)) as conn:
+        conn.execute('BEGIN IMMEDIATE')
+        current = scoped_task(conn, task_id, session_id, cfg)
+        eligible(current)
+        if approval_fingerprint(current) != fingerprint or current['status'] != task['status']:
+            raise PolicyError('Task changed while awaiting approval')
+        d.read_task_prompt(current)
+        at = d.utc_now()
+        conn.execute('INSERT INTO task_approvals VALUES (?,?,?) ON CONFLICT(task_id) DO UPDATE SET fingerprint=excluded.fingerprint, approved_at=excluded.approved_at',
+                     (task_id, fingerprint, at))
+        conn.execute("UPDATE tasks SET approval_state='approved',status='CREATED',updated_at=? WHERE task_id=?", (at, task_id))
+        d._record_event(conn, task_id, current['status'], 'CREATED', 'local operator approved task snapshot')
+        conn.commit()
+    return {'task_id': task_id, 'approval_state': 'approved', 'status': 'CREATED'}
+
+
 def describe(conn, task_id):
     queue = conn.execute('SELECT state,reason FROM task_queue WHERE task_id=?',(task_id,)).fetchone()
     review = conn.execute('SELECT decision,reviewed_at FROM task_reviews WHERE task_id=?',(task_id,)).fetchone()
@@ -136,7 +204,7 @@ def enqueue(task_id, session_id, db_path, timeout_override=None):
         task=scoped_task(conn,task_id,session_id,cfg)
         if task['status'] not in ('CREATED','DRY_RUN','QUEUED') or task['run_token']:
             raise PolicyError('Task already started, reserved or terminal')
-        ok,reason=d.check_execution_authorization(task,d.load_agents(),cfg)
+        ok,reason=authorize(conn,task,d.load_agents(),cfg,timeout_override)
         if not ok:raise PolicyError(reason)
         if timeout_override is not None:
             maximum=d.load_agents()['agents'][task['agent']]['max_timeout_seconds']
@@ -151,7 +219,8 @@ def enqueue(task_id, session_id, db_path, timeout_override=None):
 
 
 def mark_running(conn, task_id):
-    conn.execute("UPDATE task_queue SET state='RUNNING',reason=NULL WHERE task_id=?",(task_id,))
+    conn.execute("""UPDATE task_queue SET state='RUNNING',reason=NULL,
+        claim_token=NULL,claim_pid=NULL,claim_start=NULL WHERE task_id=?""", (task_id,))
 
 
 def finish(conn, task_id, report):
@@ -170,11 +239,68 @@ def release_reservation(task_id, token, reason, db_path):
         queued=conn.execute('SELECT 1 FROM task_queue WHERE task_id=?',(task_id,)).fetchone()
         changed=False
         if queued:
-            changed=conn.execute("UPDATE tasks SET status='QUEUED',run_token=NULL,error=NULL,updated_at=? WHERE task_id=? AND status='QUEUED' AND run_token=?",(d.utc_now(),task_id,token)).rowcount==1
+            changed=conn.execute("""UPDATE tasks SET run_token=NULL,owner_pid=NULL,owner_start=NULL,error=NULL,updated_at=?
+                WHERE task_id=? AND status='QUEUED' AND run_token=?""", (d.utc_now(),task_id,token)).rowcount==1
         if changed:
-            conn.execute("UPDATE task_queue SET state='WAITING',reason=?,claim_token=NULL WHERE task_id=?",(reason,task_id))
+            reset_claim(conn, task_id, 'WAITING', reason)
         conn.commit()
     return changed
+
+
+def reset_claim(conn, task_id, state, reason):
+    conn.execute("""UPDATE task_queue SET state=?,reason=?,claim_token=NULL,claim_pid=NULL,claim_start=NULL
+        WHERE task_id=?""", (state, reason, task_id))
+
+
+def prestart_owner_gone(pid, start, identity):
+    if not pid or not start:
+        return False
+    state, current = identity(pid)
+    return state == 'gone' or (state == 'alive' and current is not None and current != start)
+
+
+def recover_dispatches(conn, dispatcher):
+    conn.execute("""UPDATE task_queue
+        SET state=CASE (SELECT status FROM tasks WHERE tasks.task_id=task_queue.task_id)
+            WHEN 'CANCELLED' THEN 'CANCELLED' WHEN 'BLOCKED' THEN 'BLOCKED' ELSE 'DONE' END,
+            claim_token=NULL,claim_pid=NULL,claim_start=NULL
+        WHERE state IN ('DISPATCHING','RUNNING')
+        AND task_id IN (SELECT task_id FROM tasks WHERE status IN ('SUCCEEDED','FAILED','CANCELLED','BLOCKED'))""")
+    reservations = conn.execute("""SELECT q.*,t.status,t.run_token,t.owner_pid,t.owner_start
+        FROM task_queue q JOIN tasks t USING(task_id) WHERE q.state='DISPATCHING'""").fetchall()
+    for row in reservations:
+        if not prestart_owner_gone(row['claim_pid'], row['claim_start'], dispatcher.process_identity):
+            continue
+        if row['owner_pid'] and not prestart_owner_gone(row['owner_pid'], row['owner_start'], dispatcher.process_identity):
+            continue
+        if conn.execute('SELECT 1 FROM project_locks WHERE task_id=?', (row['task_id'],)).fetchone():
+            continue
+        # A late worker must still prove this token in the transaction that enters RUNNING.
+        changed = conn.execute("""UPDATE tasks SET status='QUEUED',run_token=NULL,owner_pid=NULL,owner_start=NULL,updated_at=?
+            WHERE task_id=? AND status IN ('QUEUED','DRY_RUN') AND run_token IS ?""",
+            (dispatcher.utc_now(), row['task_id'], row['run_token'])).rowcount
+        if changed:
+            reset_claim(conn, row['task_id'], 'WAITING', 'recovered_abandoned_dispatch')
+            dispatcher._record_event(conn, row['task_id'], row['status'], 'QUEUED', 'recovered pre-start reservation')
+
+
+def finish_dispatch_failure(db_path, task_id, token, exc):
+    import dispatcher as d
+    with closing(d.connect_db(db_path)) as conn:
+        conn.execute('BEGIN IMMEDIATE')
+        task = conn.execute("""SELECT t.status,t.run_token FROM tasks t JOIN task_queue q USING(task_id)
+            WHERE t.task_id=? AND q.state='DISPATCHING' AND q.claim_token=?""", (task_id, token)).fetchone()
+        handled = False
+        if task and not task['run_token'] and task['status'] in ('QUEUED', 'DRY_RUN'):
+            busy = isinstance(exc, d.ResourceBusy)
+            status = 'QUEUED' if busy else 'FAILED'
+            conn.execute('UPDATE tasks SET status=?,error=?,updated_at=? WHERE task_id=?',
+                         (status, None if busy else str(exc), d.utc_now(), task_id))
+            reset_claim(conn, task_id, 'WAITING' if busy else 'DONE', 'worker_busy' if busy else type(exc).__name__)
+            d._record_event(conn, task_id, task['status'], status, 'worker busy' if busy else str(exc))
+            handled = True
+        conn.commit()
+    return handled
 
 
 def pump(db_path, project_id=None):
@@ -186,11 +312,7 @@ def pump(db_path, project_id=None):
         conn.execute('BEGIN IMMEDIATE')
         for lock in conn.execute('SELECT * FROM project_locks').fetchall():
             d._recover_lock(conn,lock['project_root'],lock['lock_token'])
-        # Reconcile completed workers, including failures before RUNNING.
-        conn.execute("UPDATE task_queue SET state='DONE' WHERE state IN ('DISPATCHING','RUNNING') AND task_id IN (SELECT task_id FROM tasks WHERE status IN ('SUCCEEDED','FAILED','CANCELLED','BLOCKED'))")
-        for row in conn.execute("SELECT q.*,t.status,t.run_token FROM task_queue q JOIN tasks t USING(task_id) WHERE q.state='DISPATCHING'").fetchall():
-            if row['run_token'] is None and row['claim_pid'] and d.process_identity(row['claim_pid'])[0]=='gone':
-                conn.execute("UPDATE task_queue SET state='WAITING',claim_token=NULL WHERE task_id=?",(row['task_id'],))
+        recover_dispatches(conn, d)
         occupied=conn.execute('SELECT 1 FROM project_locks LIMIT 1').fetchone() or conn.execute("SELECT 1 FROM tasks WHERE status='RUNNING' LIMIT 1").fetchone()
         claimed=conn.execute("SELECT 1 FROM task_queue WHERE state IN ('DISPATCHING','RUNNING') LIMIT 1").fetchone()
         if occupied or claimed:
@@ -215,25 +337,36 @@ def pump(db_path, project_id=None):
             else:
                 candidate=task;break
         if candidate:
-            identity=d.process_identity(os.getpid())[1]
+            state, identity = d.process_identity(os.getpid())
+            if state != 'alive' or not identity:
+                raise PolicyError('Cannot establish queue dispatcher identity')
             conn.execute("UPDATE task_queue SET state='DISPATCHING',reason=NULL,claim_token=?,claim_pid=?,claim_start=? WHERE task_id=?",
                          (token,os.getpid(),identity,candidate['task_id']))
         conn.commit()
     if not candidate:return {'started':False,'reason':'dependencies_or_empty'}
     try:
-        task=d.launch_background(candidate['task_id'],db_path=db_path)
+        task=d.launch_background(candidate['task_id'],db_path=db_path,claim_token=token)
+        if task['status'] == 'CANCELLED':
+            return {'started':False, 'reason':'cancelled_before_start'}
+        if task['status'] == 'QUEUED' and not task.get('run_token'):
+            return {'started':False, 'reason':'worker_busy'}
         with closing(d.connect_db(db_path)) as conn:
-            if task['status'] in TERMINAL:
-                conn.execute("UPDATE task_queue SET state='DONE',reason=? WHERE task_id=? AND claim_token=?",(task.get('error'),task['task_id'],token))
+            if task['status'] == 'FAILED':
+                conn.execute("""UPDATE task_queue SET state='DONE',reason=?,claim_token=NULL,claim_pid=NULL,claim_start=NULL
+                    WHERE task_id=? AND state='DISPATCHING' AND claim_token=?""", (task.get('error'),task['task_id'],token))
         return {'started':True,'task_id':task['task_id'],'status':task['status']}
-    except d.ResourceBusy:
-        with closing(d.connect_db(db_path)) as conn:
-            conn.execute("UPDATE task_queue SET state='WAITING',reason='worker_busy',claim_token=NULL WHERE task_id=? AND claim_token=?",(candidate['task_id'],token))
+    except d.ResourceBusy as exc:
+        finish_dispatch_failure(db_path, candidate['task_id'], token, exc)
+        if d.get_task(candidate['task_id'], db_path=db_path)['status'] == 'CANCELLED':
+            return {'started':False, 'reason':'cancelled_before_start'}
         return {'started':False,'reason':'worker_busy'}
     except Exception as exc:
-        with closing(d.connect_db(db_path)) as conn:
-            conn.execute("UPDATE task_queue SET state='DONE',reason=? WHERE task_id=? AND claim_token=?",(type(exc).__name__,candidate['task_id'],token))
-            conn.execute("UPDATE tasks SET status='FAILED',error=?,updated_at=? WHERE task_id=? AND run_token IS NULL",(str(exc),d.utc_now(),candidate['task_id']))
+        handled = finish_dispatch_failure(db_path, candidate['task_id'], token, exc)
+        status = d.get_task(candidate['task_id'], db_path=db_path)['status']
+        if status == 'CANCELLED':
+            return {'started':False, 'reason':'cancelled_before_start'}
+        if handled or status == 'FAILED':
+            return {'started':False, 'reason':'dispatch_failed', 'task_id':candidate['task_id']}
         raise
 
 
@@ -242,7 +375,7 @@ def wake(db_path):
     with closing(d.connect_db(db_path)) as conn:
         if not conn.execute("SELECT 1 FROM task_queue WHERE state='WAITING' LIMIT 1").fetchone():return
         owner=conn.execute('SELECT * FROM queue_watch WHERE id=1').fetchone()
-        if owner and d.process_identity(owner['owner_pid'])[0]!='gone':return
+        if owner and not prestart_owner_gone(owner['owner_pid'], owner['owner_start'], d.process_identity):return
     d.RESULTS_DIR.mkdir(parents=True,exist_ok=True)
     with (d.RESULTS_DIR/'queue-dispatch.log').open('ab') as log:
         subprocess.Popen([sys.executable,str(Path(d.__file__).resolve()),'--db',str(Path(db_path).resolve()),'_queue_tick'],
@@ -259,7 +392,7 @@ def watch(db_path, max_seconds=3600):
     with closing(d.connect_db(db_path)) as conn:
         conn.execute('BEGIN IMMEDIATE')
         owner=conn.execute('SELECT * FROM queue_watch WHERE id=1').fetchone()
-        if owner and d.process_identity(owner['owner_pid'])[0]!='gone':return {'observer':'already_running'}
+        if owner and not prestart_owner_gone(owner['owner_pid'], owner['owner_start'], d.process_identity):return {'observer':'already_running'}
         conn.execute('INSERT OR REPLACE INTO queue_watch VALUES (1,?,?,?)',(token,os.getpid(),identity))
         conn.commit()
     deadline=time.monotonic()+max_seconds
@@ -267,8 +400,8 @@ def watch(db_path, max_seconds=3600):
         while time.monotonic()<deadline:
             result=pump(db_path)
             with closing(d.connect_db(db_path)) as conn:
-                waiting=conn.execute("SELECT 1 FROM task_queue WHERE state='WAITING' LIMIT 1").fetchone()
-            if not waiting or (not result['started'] and result['reason']!='worker_busy'):return result
+                pending=conn.execute("SELECT 1 FROM task_queue WHERE state IN ('WAITING','DISPATCHING') LIMIT 1").fetchone()
+            if not pending or (not result['started'] and result['reason']=='dependencies_or_empty'):return result
             time.sleep(1)
         return {'observer':'time_limit','reason':'explicit queued work remains; use run-next to resume'}
     finally:
@@ -351,9 +484,10 @@ def guard_command(command, args, session, db_path, cfg, dispatch_root):
         if row is None or dict(row).get('project_id')!=pid:return blocked('Task is outside the bound project')
         task=dict(row)
     if command in ('run','enqueue'):
-        from policy import check_execution_authorization,load_agents
+        from policy import load_agents
         agents=load_agents(Path(dispatch_root)/'agents.json')
-        ok,reason=check_execution_authorization(task,agents,cfg)
+        with closing(sqlite3.connect(Path(db_path).as_uri()+'?mode=ro',uri=True)) as conn:
+            ok,reason=authorize(conn,task,agents,cfg)
         if not ok:return blocked(reason)
         if task['status'] not in ('CREATED','DRY_RUN','QUEUED') or task['run_token']:
             return blocked('Task already reserved or terminal')

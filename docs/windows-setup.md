@@ -23,13 +23,15 @@ CLI 尚未安装时，向导会提供官方安装说明，并允许填写安装�
 - 修改前在 `local-config/backups/<时间-随机值>/` 保存原文件与校验清单。备份可能含用户私有配置，该目录已被 Git 忽略。
 - 重复运行相同设置不会重复添加 Hook，也不会重写一致文件。预览后文件变化、存在其他维护标志或数据库不空闲时停止操作。
 - 写入或自检失败时恢复本次配置改动。不会用旧数据库覆盖账本；初始化后的空库或加法迁移可以保留。自检用的临时会话绑定会清理。
-- 回退会检查安装后文件是否又被用户修改，发现新改动就停止，避免覆盖。
+- 回退根据文件哈希判断进度。原样文件会跳过，确认写入的文件会还原，发现其他改动会停止。
 
 手动恢复指定备份：
 
 ```powershell
 .\.setup-venv\Scripts\python.exe -X utf8 -B scripts\windows_setup.py --restore "C:\path\to\hermes-team-v8\local-config\backups\实际备份目录"
 ```
+
+安装进程异常退出后，使用对应备份执行同一命令。向导在确认这份维护标志属于已经结束的安装进程后恢复，到达安全状态后释放标志。恢复过程中再遇到中断，可以重跑同一命令。
 
 仅检测，不写配置：
 
@@ -42,7 +44,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\install-windows.
 
 ## 测试与验证范围
 
-运行时仍可独立使用 Python 标准库运行 105 项回归。安装向导另有 28 项测试，需要 setup 环境中的 YAML 依赖：
+v8.1.1 使用 Python 标准库运行 112 项运行时回归。安装向导另有 29 项测试，需要 setup 环境中的 YAML 依赖：
 
 ```powershell
 python -X utf8 -B scripts/run_tests.py

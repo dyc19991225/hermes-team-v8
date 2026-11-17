@@ -113,18 +113,58 @@ class SetupTests(unittest.TestCase):
     def test_mid_write_failure_rolls_back_only_written_files(self):
         plan = self.plan()
         original_write = setup.atomic_write
+        target_paths = {change.path for change in plan.changes}
         calls = 0
         def broken(path, raw):
             nonlocal calls
-            calls += 1
-            if calls == 2:
-                raise OSError('fixture write failure')
+            if path in target_paths:
+                calls += 1
+                if calls == 2:
+                    raise OSError('fixture write failure')
             return original_write(path, raw)
         with mock.patch.object(setup, 'atomic_write', side_effect=broken):
             with self.assertRaises(OSError):
                 setup.apply_plan(plan)
         self.assertFalse((self.repo/'dispatch'/'agents.json').exists())
         self.assertEqual((self.home/'config.yaml').read_bytes(), self.original)
+
+    def test_restore_recovers_after_install_process_exits_mid_write(self):
+        expected = self.plan()
+        code = """
+import os, sys
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+import windows_setup as setup
+repo, project, home = map(Path, sys.argv[2:])
+exe = Path(sys.executable)
+plan = setup.plan_setup(repo, project, 'project-alpha', {'codex': exe}, home, exe)
+write = setup.atomic_write
+first = plan.changes[0].path
+def write_and_exit(path, raw, **kwargs):
+    write(path, raw, **kwargs)
+    if path == first:
+        os._exit(73)
+setup.atomic_write = write_and_exit
+setup.perform_install(plan, 'project-alpha', exe)
+"""
+        result = subprocess.run([sys.executable, '-B', '-c', code, str(ROOT/'scripts'),
+                                 str(self.repo), str(self.project), str(self.home)],
+                                capture_output=True, timeout=15)
+        self.assertEqual(result.returncode, 73, result.stderr)
+        flag = self.repo/'dispatch'/'.v71-maintenance'
+        self.assertTrue(flag.exists())
+        first, *rest = expected.changes
+        self.assertEqual(first.path.read_bytes(), first.after)
+        for change in rest:
+            self.assertEqual(setup.read_optional(change.path), change.before)
+        backup, = (self.repo/'local-config'/'backups').iterdir()
+        with mock.patch.object(setup, 'REPO', self.repo), contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(setup.main(['--restore', str(backup)]), 0)
+            self.assertEqual(setup.main(['--restore', str(backup)]), 0)
+        self.assertFalse(flag.exists())
+        for change in expected.changes:
+            self.assertEqual(setup.read_optional(change.path), change.before)
+        self.assertEqual((self.home/'auth.json').read_text(), 'fixture-auth-must-not-change')
 
     def test_changed_file_after_preview_aborts_before_any_write(self):
         plan = self.plan()

@@ -231,6 +231,8 @@ def guard_hook(payload,dispatch_root):
             parts=[x[1:-1] if len(x)>1 and x[0]==x[-1] and x[0] in '\"\'' else x for x in parts]
             if len(parts)>=3 and Path(parts[0]).name.lower() in ('python','python.exe','python3','python3.exe') and canonical(parts[1])==canonical(str(dispatch_root/'dispatcher.py')):
                 sub=parts[2];rest=parts[3:]
+                if sub=='approve':
+                    return blocked('Approval is only available in the local operator terminal')
                 if sub in ('run','enqueue','queue','run-next','review','doctor','usage'):
                     import workflow
                     return workflow.guard_command(sub,rest,session,db,cfg,dispatch_root)
@@ -262,6 +264,7 @@ def guard_hook(payload,dispatch_root):
                     if len(rest)!=2 or rest[0]!='--file':return blocked('Invalid create arguments')
                     p=inside(rest[1],dispatch_root/'inbox')
                     spec=json.loads(p.read_text(encoding='utf-8-sig'));validate(spec,cfg)
+                    if spec.get('approval_state')=='approved':return blocked('Task cannot self-approve')
                     if spec['project_id']!=bound_project(session,db):return blocked('Task differs from bound project')
                     if spec.get('session_id')!=session:return blocked('Task must carry this session ID')
                 return None
@@ -273,11 +276,11 @@ def guard_hook(payload,dispatch_root):
         if tool=='write_file':
             spec=json.loads(args.get('content',''));validate(spec,cfg)
             if spec['project_id']!=bound_project(session,db):return blocked('Task differs from bound project')
+            if spec.get('approval_state')=='approved':return blocked('Task cannot self-approve')
             if 'session_id' not in spec:
                 spec['session_id']=session
                 return {'action':'modify','args':dict(args,content=json.dumps(spec,ensure_ascii=False))}
             if spec.get('session_id')!=session:return blocked('Task must carry this session ID')
-            if spec.get('approval_state')=='approved' and cfg['risk_levels'][spec['risk_level']].get('requires_approval'):return blocked('Task cannot self-approve')
             if spec.get('prompt_path'):inside(spec['prompt_path'],spec['project_root'])
             return None
         if tool in ('read_file','search_files'):

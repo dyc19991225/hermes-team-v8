@@ -25,6 +25,7 @@ private/
 /dispatch/results/
 /dispatch/reports/
 /dispatch/.v71-maintenance
+/dispatch/.team-setup.lock
 /dispatch/*.worker.log
 /test-output/
 /.setup-venv/

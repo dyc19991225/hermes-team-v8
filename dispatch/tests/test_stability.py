@@ -178,12 +178,38 @@ class StabilityTests(unittest.TestCase):
         self.assertEqual(json.loads((self.results/f'{tid}.json').read_text())['status'],'CANCELLED')
         self.assertEqual(d.get_task(tid,db_path=self.db)['status'],'CANCELLED')
 
-    def test_large_output_keeps_full_log_but_bounds_json_parse(self):
+    def test_large_invalid_jsonl_still_fails_and_retains_original_log(self):
         tid=self.task()
         with mock.patch.object(d,'build_cli_invocation',return_value=self.invocation("print('x'*5000000)")):
             result=d.run_task(tid,db_path=self.db,results_dir=self.results)
-        self.assertEqual(result['status'],'FAILED'); self.assertIn('parse limit',result['error'])
+        self.assertEqual(result['status'],'FAILED'); self.assertIn('Invalid JSONL',result['error'])
         self.assertGreater((self.results/f'{tid}.stdout.log').stat().st_size,5000000)
+
+    def test_large_valid_streams_succeed_with_bounded_report(self):
+        tid = self.task()
+        code = ("import json,sys\n"
+                "for _ in range(6): print(json.dumps({'text': 'x' * 900000}))\n"
+                "print(json.dumps({'type': 'result', 'result': 'done'}))\n"
+                "sys.stderr.write('y' * 5000000)")
+        with mock.patch.object(d, 'build_cli_invocation', return_value=self.invocation(code)):
+            result = d.run_task(tid, db_path=self.db, results_dir=self.results)
+        self.assertEqual(result['status'], 'SUCCEEDED')
+        self.assertTrue(result['stdout_truncated'] and result['stderr_truncated'])
+        self.assertLessEqual(len(result['stdout']), d.RESULT_TAIL_BYTES)
+        self.assertLessEqual(len(result['stderr']), d.RESULT_TAIL_BYTES)
+        self.assertEqual(result['parsed_output'], [{'type': 'result', 'result': 'done'}])
+        self.assertGreater(Path(result['stdout_log']).stat().st_size, d.INLINE_RESULT_BYTES)
+
+    def test_large_valid_stream_cannot_hide_early_error(self):
+        tid = self.task()
+        code = ("import json\nprint(json.dumps({'is_error': True}))\n"
+                "for _ in range(5): print(json.dumps({'text': 'x' * 900000}))\n"
+                "print(json.dumps({'type': 'result', 'result': 'done'}))")
+        with mock.patch.object(d, 'build_cli_invocation', return_value=self.invocation(code)):
+            result = d.run_task(tid, db_path=self.db, results_dir=self.results)
+        self.assertTrue(result['json_parse_ok'] and result['stdout_truncated'])
+        self.assertEqual(result['status'], 'FAILED')
+        self.assertIn('structured output', result['error'])
 
     def test_lock_token_changed_while_running_never_deleted(self):
         tid=self.task(); t,res=self.run_async(tid,self.invocation('import time; time.sleep(30)'))

@@ -2,17 +2,17 @@
 
 **一套 Hermes，管理多个项目，协调多个 Agent 执行器。**
 
-**[下载 v8.1.0 Windows 安装配置包（ZIP）](https://github.com/dyc19991225/hermes-team-v8/releases/download/v8.1.0/hermes-team-v8.1.0-windows.zip)**
+**[下载 v8.1.1 源码与 Windows 安装向导（ZIP）](https://github.com/dyc19991225/hermes-team-v8/archive/refs/tags/v8.1.1.zip)**
 
-[v8.1.0 Release](https://github.com/dyc19991225/hermes-team-v8/releases/tag/v8.1.0) · [Windows 安装说明](https://github.com/dyc19991225/hermes-team-v8/releases/download/v8.1.0/WINDOWS-INSTALL.md) · [下载与安装验收结果](https://github.com/dyc19991225/hermes-team-v8/releases/download/v8.1.0/ACCEPTANCE-RESULTS.md) · [SHA-256 校验文件](https://github.com/dyc19991225/hermes-team-v8/releases/download/v8.1.0/SHA256SUMS.txt)
+v8.1.1 修复高风险审批、派发恢复、取消状态、向导中断恢复和大日志解析。Windows 隔离测试 **141 项通过**。详见 [版本记录](CHANGELOG.md#v811--2026-11-18) · [Windows 安装说明](docs/windows-setup.md)。
 
-该版本已通过 **133 项测试：105 项运行时回归 + 28 项安装向导回归**，并完成 GitHub 全新下载副本的首次安装、重复安装、取消和恢复验证。详细范围见上方验收结果，结构化数据见 [验收摘要 JSON](https://github.com/dyc19991225/hermes-team-v8/releases/download/v8.1.0/acceptance-summary.json)。
+[历史 v8.1.0 Release](https://github.com/dyc19991225/hermes-team-v8/releases/tag/v8.1.0) · [v8.1.0 下载与安装验收结果](https://github.com/dyc19991225/hermes-team-v8/releases/download/v8.1.0/ACCEPTANCE-RESULTS.md) · [v8.1.0 SHA-256 校验文件](https://github.com/dyc19991225/hermes-team-v8/releases/download/v8.1.0/SHA256SUMS.txt)
 
 基于 Hermes 搭建的 Windows 本地 Agent 编排实践：由 Hermes 理解目标、拆分任务、派发执行并检查交付，通过共享 Dispatcher 将 Codex、Claude Code 和 Antigravity CLI（AGY）接入同一套任务协议。
 
 V8 的重点是让多个项目共用工具和登录状态，同时明确每次任务属于哪个项目、能访问哪些文件、如何停止，以及用什么证据判断结果。V8.1 在此基础上修复执行稳定性问题，增加串行队列、阶段依赖、独立验收记录和任务预算。
 
-> 这里公开 V8.1 核心运行源码、Hermes Hook、管理 Skill、配置模板和回归测试。V8.1 是本地编排方案的版本名，并非上游 Hermes 的官方版本号。Windows / Python 3.13 是实际验收环境；真实模型任务需要自行安装并登录 CLI。更新日期：2026-11-17。
+> 这里公开 V8.1 核心运行源码、Hermes Hook、管理 Skill、配置模板和回归测试。V8.1 是本地编排方案的版本名。实际验收环境为 Windows 与 Python 3.13，真实模型任务需要自行安装并登录 CLI。更新日期 2026-11-18。
 
 [Windows 一键配置](docs/windows-setup.md) · [运行与配置](docs/runtime-setup.md) · [核心源码](dispatch/) · [回归测试](dispatch/tests/) · [架构与执行流程](docs/architecture.md) · [验证记录](docs/validation.md)
 
@@ -20,7 +20,7 @@ V8 的重点是让多个项目共用工具和登录状态，同时明确每次�
 
 适用于 Windows。需要可运行的 Hermes、Codex 原生 `.exe`；Claude Code / AGY 可选。Python 要求 3.13+，未检测到时可确认后用 winget 安装；模型 CLI 未安装时，向导提供官方安装说明和路径重试。ZIP 包含源码与配置向导，不内置模型 CLI 或登录账号。
 
-1. **下载并解压**：[获取 v8.1.0 ZIP](https://github.com/dyc19991225/hermes-team-v8/releases/download/v8.1.0/hermes-team-v8.1.0-windows.zip)，完整解压到固定目录，与业务项目分开；不要直接在 ZIP 中运行。
+1. **下载并解压**：[获取 v8.1.1 ZIP](https://github.com/dyc19991225/hermes-team-v8/archive/refs/tags/v8.1.1.zip)，完整解压到与业务项目分开的固定目录。
 2. **运行向导**：双击解压目录中的 **`install.cmd`**，检测环境和执行器，选择有效的 Hermes 配置目录，填写业务项目路径与项目 ID。
 3. **预览并应用**：确认文件改动后，向导先备份，再合并 Hook、生成管理 Skill 并执行本地自检；保留已有模型、渠道和其他 Hook。
 4. **启动并完成信任**：双击 **`start-hermes.cmd`**，在官方界面完成主控模型、账号登录及首次 Hook 信任；以后继续用此文件启动，沿用保存的配置。
@@ -37,15 +37,15 @@ python -X utf8 -B scripts/run_tests.py
 
 仅使用 Python 标准库。入口将源码与测试复制到临时目录，生成虚构项目及本地 Python 假执行器，用户目录也切换到临时配置；不需要安装模型 CLI 或登录账号，不发起模型请求。
 
-公开版 **105 项测试通过**：原有 101 项，加上 4 项配置与 Hook 入口回归。结果见 [公开源码测试摘要](evidence/public-source-test-summary.json)。
+v8.1.1 运行时 **112 项测试通过**，包括审批快照、取消竞争、派发恢复和大日志回归。
 
-完成向导环境准备后，还可以运行 **28 项安装向导测试**：
+完成向导环境准备后，还可以运行 **29 项安装向导测试**：
 
 ```powershell
 .\.setup-venv\Scripts\python.exe -X utf8 -B -m unittest discover -s tests/setup -v
 ```
 
-两组共 **133 项**；Release ZIP 解压后也已复跑通过。详见 [v8.1.0 验收报告](https://github.com/dyc19991225/hermes-team-v8/releases/download/v8.1.0/ACCEPTANCE-RESULTS.md)。
+本次两组共 **141 项**，在 Windows 上使用隔离项目、模拟执行器和临时 Hermes 配置测试。
 
 实际配置见 [运行说明](docs/runtime-setup.md)：提供真实项目目录和 CLI 路径，配置脚本会生成被 Git 忽略的本机文件，拒绝覆盖已有配置。账号凭据、任务数据库、提示、原始运行日志和备份不随源码分发。
 

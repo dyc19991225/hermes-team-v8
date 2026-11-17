@@ -1,5 +1,7 @@
 """V8.1 regressions. Temporary projects, stub CLIs and no model API calls."""
 import json
+import io
+from contextlib import redirect_stdout
 import os
 from pathlib import Path
 import shutil
@@ -112,6 +114,92 @@ class UpgradeTests(unittest.TestCase):
         wf.review(parent['task_id'],'session-a','accept',str(self.evidence()),self.f.db)
         self.assertEqual(self.run_stub(child)['status'],'SUCCEEDED')
 
+    def test_operator_approval_is_bound_to_the_reviewed_task(self):
+        with self.assertRaisesRegex(d.PolicyError, 'local operator'):
+            self.f.task(risk_level='high', approval_state='approved')
+        row = self.f.task(risk_level='high', timeout=10)
+        task_id = row['task_id']
+        self.assertEqual(row['status'], 'AWAITING_APPROVAL')
+        self.assertEqual(row['approval_state'], 'pending')
+        command = f'python "{self.f.control / "dispatcher.py"}" approve --task-id {task_id} --session-id session-a'
+        self.assertEqual(self.f.hook('terminal', {'command': command})['action'], 'block')
+
+        class Terminal(io.StringIO):
+            def isatty(self):
+                return True
+
+        with mock.patch.object(wf.sys, 'stdin', io.StringIO()):
+            with self.assertRaisesRegex(d.PolicyError, 'interactive'):
+                wf.approve(task_id, 'session-a', self.f.db)
+        with mock.patch.object(wf.sys, 'stdin', Terminal()), redirect_stdout(Terminal()):
+            with mock.patch('builtins.input', return_value='decline'):
+                with self.assertRaisesRegex(d.PolicyError, 'cancelled'):
+                    wf.approve(task_id, 'session-a', self.f.db)
+            self.assertEqual(self.sql('SELECT * FROM task_approvals'), [])
+            with mock.patch('builtins.input', return_value=task_id):
+                with self.assertRaisesRegex(d.PolicyError, 'outside the bound project'):
+                    wf.approve(task_id, 'session-b', self.f.db)
+                self.assertEqual(wf.approve(task_id, 'session-a', self.f.db)['status'], 'CREATED')
+        with self.assertRaisesRegex(d.PolicyError, 'timeout'):
+            wf.enqueue(task_id, 'session-a', self.f.db, timeout_override=11)
+        self.assertEqual(self.run_stub(row)['status'], 'SUCCEEDED')
+
+    def test_unverified_legacy_approval_and_changed_snapshot_are_rejected(self):
+        row = self.f.task(risk_level='high')
+        task_id = row['task_id']
+        self.sql("UPDATE tasks SET approval_state='approved',status='CREATED' WHERE task_id=?", (task_id,))
+        with self.assertRaisesRegex(d.PolicyError, 'verified operator approval'):
+            self.run_stub(row)
+        self.sql('INSERT INTO task_approvals VALUES (?,?,?)', (task_id, wf.approval_fingerprint(row), d.utc_now()))
+        Path(row['prompt_path']).write_text('changed fixture', encoding='utf-8')
+        with self.assertRaisesRegex(pm.ProjectError, 'snapshot hash'):
+            self.run_stub(row)
+
+    def test_cancel_between_dispatch_claim_and_launch_stays_cancelled(self):
+        row = self.f.task()
+        task_id = row['task_id']
+        wf.enqueue(task_id, 'session-a', self.f.db)
+        launch = d.launch_background
+
+        def cancel_then_launch(*args, **kwargs):
+            d.cancel_task(task_id, db_path=self.f.db)
+            return launch(*args, **kwargs)
+
+        with mock.patch.object(d, 'launch_background', side_effect=cancel_then_launch):
+            self.assertEqual(wf.pump(self.f.db)['reason'], 'cancelled_before_start')
+        self.assertEqual(self.sql('SELECT status FROM tasks')[0]['status'], 'CANCELLED')
+        self.assertEqual(self.sql('SELECT state FROM task_queue')[0]['state'], 'CANCELLED')
+
+    def test_dead_prestart_reservation_recovers_and_fences_late_worker(self):
+        row = self.f.task()
+        task_id = row['task_id']
+        wf.enqueue(task_id, 'session-a', self.f.db)
+        self.sql("UPDATE tasks SET run_token='abandoned' WHERE task_id=?", (task_id,))
+        self.sql("""UPDATE task_queue SET state='DISPATCHING',claim_token='claim',
+            claim_pid=10001,claim_start='launcher-start' WHERE task_id=?""", (task_id,))
+        identify = d.process_identity
+        with mock.patch.object(d, 'process_identity', side_effect=lambda pid: ('gone', None) if pid == 10001 else identify(pid)):
+            with mock.patch.object(d, 'launch_background', return_value=dict(row, status='RUNNING')) as launch:
+                self.assertEqual(wf.pump(self.f.db)['task_id'], task_id)
+                launch.assert_called_once()
+        self.assertIsNone(d.get_task(task_id, db_path=self.f.db)['run_token'])
+        with self.assertRaisesRegex(d.PolicyError, 'Stale'):
+            d.run_task(task_id, db_path=self.f.db, results_dir=self.f.results, launch_token='abandoned')
+
+    def test_preparing_worker_keeps_claim_when_launcher_is_gone(self):
+        row = self.f.task()
+        task_id = row['task_id']
+        wf.enqueue(task_id, 'session-a', self.f.db)
+        self.sql("""UPDATE tasks SET run_token='reserved',owner_pid=10002,owner_start='worker-start'
+            WHERE task_id=?""", (task_id,))
+        self.sql("""UPDATE task_queue SET state='DISPATCHING',claim_token='claim',
+            claim_pid=10001,claim_start='launcher-start' WHERE task_id=?""", (task_id,))
+        with mock.patch.object(d, 'process_identity', side_effect=[('gone', None), ('alive', 'worker-start')]):
+            with mock.patch.object(d, 'launch_background') as launch:
+                self.assertEqual(wf.pump(self.f.db)['reason'], 'worker_busy')
+                launch.assert_not_called()
+        self.assertEqual(d.get_task(task_id, db_path=self.f.db)['run_token'], 'reserved')
+
     def test_rejected_dependency_blocks_only_its_explicit_queue(self):
         parent=self.f.task();child=self.f.task(depends_on=[parent['task_id']]);untouched=self.f.task()
         self.run_stub(parent)
@@ -180,7 +268,8 @@ class UpgradeTests(unittest.TestCase):
                 VALUES (?,?,?,?,?,?,?,?,?)''',(parent['project_root'],parent['task_id'],d.utc_now(),token,99999991,'old-owner',99999992,'old-child',0))
         finally:conn.close()
         wf.enqueue(child['task_id'],'session-b',self.f.db)
-        with mock.patch.object(d,'process_identity',return_value=('gone',None)),mock.patch.object(d,'launch_background',return_value=child) as launch:
+        identify = d.process_identity
+        with mock.patch.object(d,'process_identity',side_effect=lambda pid: identify(pid) if pid==os.getpid() else ('gone',None)),mock.patch.object(d,'launch_background',return_value=dict(child,status='RUNNING')) as launch:
             wf.pump(self.f.db)
         launch.assert_called_once()
         self.assertEqual(d.get_task(parent['task_id'],db_path=self.f.db)['status'],'FAILED')
